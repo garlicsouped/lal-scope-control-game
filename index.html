@@ -662,12 +662,22 @@ function badgeFor(){const p=score/MAX;
   if(p>=0.75)return{b:"Sharp Radar \uD83C\uDF96\uFE0F",h:'thumbs',m:"Strong work. You caught most of them. Revisit the misses, usually the reply that sounds diligent but quietly caves, or the one that raises it but pre-judges the effort."};
   if(p>=0.5)return{b:"Getting There \uD83D\uDCAA",h:'wave',m:"Solid start. Two habits to lock in: separate pressure and framing from actual scope, and remember a warm 'yes' that logs nothing is still a quiet yes."};
   return{b:"Keep Practising \uD83C\uDF31",h:'pause',m:"No worries, that's what this is for. If you can't point to where it was agreed, it isn't in scope, so recognise it, log it, and let the process decide."};}
+let LAST_SCORE_ERR="";
 async function submitScoreOnce(){
-  if(scoreSubmitted) return; scoreSubmitted=true; save();
+  if(scoreSubmitted) return;
+  LAST_SCORE_ERR="";
   try{
     await submitScoreRemote({group_name:group,player_names:members,score:score,forms_correct:formCorrect,resp_correct:respCorrect,best_streak:bestStreak});
-  }catch(e){ console.warn('score submit failed',e); }
+    scoreSubmitted=true; save();
+    const b=document.getElementById('scoreSubmitBanner'); if(b)b.style.display='none';
+  }catch(e){
+    LAST_SCORE_ERR=String(e&&e.message||e);
+    console.warn('score submit failed',LAST_SCORE_ERR);
+    const b=document.getElementById('scoreSubmitBanner');
+    if(b){ b.style.display='block'; b.textContent='Score not yet submitted to the leaderboard ('+LAST_SCORE_ERR+'). Tap to retry.'; }
+  }
 }
+async function retryScoreSubmit(){ if(soundOn)SFX.click(); await submitScoreOnce(); }
 function results(){finished=true;updateHud();hypeStop();document.getElementById('mascot').style.display='none';
   document.getElementById('subtitle').textContent="Challenge complete. Here's how you did.";SFX.fanfare();const bd=badgeFor();buildPrintArea(bd);
   submitScoreOnce();
@@ -677,6 +687,7 @@ function results(){finished=true;updateHud();hypeStop();document.getElementById(
       <h2>Challenge complete!</h2>
       <div class="grp">${escapeHtml(group||"Our team")}</div>
       ${members?'<div style="color:#5b6260;font-size:13px;margin-bottom:8px">'+escapeHtml(members)+'</div>':''}
+      <div id="scoreSubmitBanner" onclick="retryScoreSubmit()" style="display:none;cursor:pointer;background:#fdecea;color:#c0392b;border:1px solid #f0b6ae;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:bold;margin-bottom:10px"></div>
       <div class="big">${score}</div><div class="out-of">out of ${MAX} points</div>
       <div class="badge">${bd.b}</div>
       <p class="msg">${bd.m}</p>
@@ -1016,29 +1027,33 @@ async function openUserMappingManager(){
   let ov=document.getElementById('adminOverlay');
   if(!ov){ov=document.createElement('div');ov.id='adminOverlay';document.body.appendChild(ov);}
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,32,30,.75);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 16px;font-family:Arial,Helvetica,sans-serif';
-  ov.innerHTML=userMappingManagerHtml('Loading user mapping\u2026', []);
-  const ok = await fetchUserMappings();
-  if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not load user mappings. '+(LAST_MAPPING_ERR||'Check your connection and reopen this panel.'), []); return; }
+  ov.innerHTML=userMappingManagerHtml('Loading user mapping\u2026', [], []);
+  const [ok, groupNames] = await Promise.all([fetchUserMappings(), fetchGroups()]);
+  if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not load user mappings. '+(LAST_MAPPING_ERR||'Check your connection and reopen this panel.'), [], groupNames||[]); return; }
+  if(groupNames!==null) GROUPS_CACHE=groupNames;
   const rows = USER_LIST_CACHE.map(u=>({user:u,group:USER_GROUP_MAP[u]}));
-  ov.innerHTML = userMappingManagerHtml(null, rows);
+  ov.innerHTML = userMappingManagerHtml(null, rows, GROUPS_CACHE||[]);
 }
-function userMappingManagerHtml(err, rows){
+function userMappingManagerHtml(err, rows, groupNames){
   const list = (rows&&rows.length) ? rows.map(r=>
       '<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px;gap:8px">'
       +'<span style="font-weight:bold;color:#003F3C;flex:1">'+escapeHtml(r.user)+'</span>'
-      +'<span style="color:#5b6260;font-size:12.5px;flex:1;text-align:left">'+escapeHtml(r.group||'')+'</span>'
+      +'<span style="color:#5b6260;font-size:12.5px;flex:1;text-align:left">'+escapeHtml(r.group||'')+(r.group&&groupNames&&groupNames.length&&groupNames.indexOf(r.group)===-1?' <b style="color:#c0392b">(not in Manage groups)</b>':'')+'</span>'
       +'<button onclick="removeUserMapping(\''+r.user.replace(/'/g,"\\'")+'\')" style="'+EDDEL+'">Remove</button>'
       +'</div>').join('')
     : '<div style="font-size:13px;color:#8a938f;font-style:italic;margin-bottom:6px">No mappings yet, add one below.</div>';
+  const groupOptions = (groupNames&&groupNames.length)
+    ? '<option value="">-- Select group --</option>'+groupNames.map(g=>'<option value="'+escapeHtml(g)+'">'+escapeHtml(g)+'</option>').join('')
+    : '<option value="">No groups yet, add one in Manage groups first</option>';
   return '<div style="background:#fff;border-radius:18px;max-width:520px;width:100%;padding:24px 24px 22px;box-shadow:0 18px 40px rgba(0,0,0,.35);margin-top:40px;font-family:Arial,Helvetica,sans-serif">'
     +'<div style="font-size:12px;letter-spacing:2px;color:#2E9E6B;font-weight:bold">FACILITATOR</div>'
     +'<div style="font-size:20px;font-weight:bold;color:#003F3C;margin:2px 0 4px">Manage user mapping</div>'
-    +'<div style="font-size:12.5px;color:#5b6260;margin-bottom:12px">Maps each player\'s name to a predefined group, so they only need to pick their name to join the right group.</div>'
+    +'<div style="font-size:12.5px;color:#5b6260;margin-bottom:12px">Maps each player\'s name to a predefined group, so they only need to pick their name to join the right group. Group must match an existing group exactly, so pick it from the list rather than typing it, this avoids scores silently failing to submit.</div>'
     +(err?'<div style="color:#c0392b;font-size:13px;margin-bottom:10px">'+escapeHtml(err)+'</div>':'')
     +'<div style="max-height:280px;overflow:auto;margin-bottom:12px">'+list+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
-    +'<input id="newMapUser" placeholder="Name (e.g. Ally Kuek)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit">'
-    +'<input id="newMapGroup" placeholder="Group (e.g. APAC Delivery Team 2)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit" onkeydown="if(event.key===\'Enter\')addUserMappingClick()">'
+    +'<input id="newMapUser" placeholder="Name (e.g. Ally Kuek)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit" onkeydown="if(event.key===\'Enter\')addUserMappingClick()">'
+    +'<select id="newMapGroup" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit">'+groupOptions+'</select>'
     +'<button onclick="addUserMappingClick()" style="'+EDADD+'">+ Add</button>'
     +'</div>'
     +'<div style="display:flex;justify-content:flex-end"><button onclick="closeAdmin()" style="background:#003F3C;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:bold;cursor:pointer;font-family:inherit">Done</button></div>'
@@ -1047,7 +1062,7 @@ function userMappingManagerHtml(err, rows){
 async function addUserMappingClick(){
   const ui=document.getElementById('newMapUser'), gi=document.getElementById('newMapGroup');
   const user=(ui&&ui.value||'').trim(), grp=(gi&&gi.value||'').trim();
-  if(!user||!grp)return;
+  if(!user||!grp){ alert('Please enter a name and select a group.'); return; }
   try{ await addUserMappingRemote(user,grp); if(soundOn)SFX.good(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
   catch(e){ alert('Could not add that mapping: '+(e&&e.message?e.message:'it may already exist or the connection dropped.')); }
 }
