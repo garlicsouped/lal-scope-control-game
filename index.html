@@ -1155,7 +1155,7 @@ function adminBtnClick(){
     adminMode=false;updateAdminBtn();if(started&&!finished){try{render();}catch(e){}}else if(!started){try{showTutorial();}catch(e){}}if(soundOn)SFX.click();
   } else openAdmin();
 }
-function updateAdminBtn(){const b=document.getElementById('adminBtn');if(b)b.innerHTML=adminMode?'&#128275; Admin: ON':'&#128273; Admin';}
+function updateAdminBtn(){const b=document.getElementById('adminBtn');if(b)b.innerHTML=adminMode?'&#128275; Admin':'&#128273; Admin';}
 function enableAdminMode(){adminMode=true;snapshotOriginals();updateAdminBtn();closeAdmin();
   if(soundOn)SFX.good();
   if(pendingKeyPrint){pendingKeyPrint=false;flashAdmin('Access granted. Opening the answer key to save as PDF\u2026');setTimeout(doPrintAnswerKey,250);return;}
