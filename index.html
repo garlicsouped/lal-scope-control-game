@@ -268,7 +268,9 @@
   <div class="layout">
     <div id="stage" style="flex:1">
     <div class="card">
-      <div class="card-head"><span class="scn-num">Case 5</span><span class="tag">Timeline</span></div>
+      <div class="card-head"><span class="scn-num">Case 5</span>
+        <!-- <span class="tag">Timeline</span> -->
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin:2px 0 14px;background:#eef7ff;border:1px solid #cdd8ff;border-radius:10px;padding:8px 12px;flex-wrap:wrap"><span style="font-size:11px;font-weight:bold;letter-spacing:.5px;color:#3B44FE">ADMIN MODE</span><button onclick="startEdit()" style="background:#3B44FE;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">✏️ Edit this case</button><button onclick="showAnswerKey()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Answer key</button><button onclick="openGroupManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Manage groups</button><button onclick="openUserMappingManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Manage user mapping</button><button onclick="saveWholeHtml()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">💾 Save HTML</button><span style="flex:1"></span><button onclick="adminPrev()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">← Prev</button><span style="font-size:12px;font-weight:bold;color:#3B44FE;min-width:52px;text-align:center">Case 5/5</span><button onclick="adminNext()" disabled="" style="background:#e6ecf7;color:#a9b4cc;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:default;font-family:inherit">Next →</button></div>
       <div class="client-line">“Since we can't have everything, let's just drop that requirement and do this one instead.”</div>
       <div class="scn-rich"><p>Back in Discovery, the client's PM weighed up two possible requirements, A and B, and after discussion formally chose Requirement A. This was written into the signed BRD, and Requirement B was parked. Fast forward to now, close to UAT, Requirement A has been fully built and tested. The same PM calls, friendly:</p><div class="quote">“Since we can't have everything, let's just drop Requirement A and do Requirement B instead. Straight swap only mah, one out one in, shouldn't cost anything extra right? Actually might even be faster.”</div><p>You check the decision log from discovery and confirm A was formally chosen and signed off, with B parked. You also check the build log and confirm A is fully built and tested.</p></div>
@@ -761,7 +763,9 @@ function render(){
   const canVerify = stepsUnlocked && st.form!=null && st.resp!=null;
   stage.innerHTML=`
     <div class="card">
-      <div class="card-head"><span class="scn-num">Case ${idx+1}</span><span class="tag">${escapeHtml(sc.tag)}</span></div>
+      <div class="card-head"><span class="scn-num">Case ${idx+1}</span>
+        <!-- <span class="tag">${escapeHtml(sc.tag)}</span> -->
+        </div>
       ${adminMode?adminBar():''}
       <div class="client-line">${escapeHtml(sc.clientLine)}</div>
       <div class="scn-rich">${sc.blurb}</div>
@@ -1396,7 +1400,7 @@ const EDDEL='background:#fdeceb;border:1px solid #f0c9c5;color:#c0392b;border-ra
 function renderEdit(){
   const sc=SCENARIOS[idx];document.getElementById('mascot').style.display='none';updateHud();
   let h='<div class="card">';
-  h+='<div class="card-head"><span class="scn-num">Case '+(idx+1)+'</span><span class="tag">'+escapeHtml(sc.tag)+'</span>'
+  h+='<div class="card-head"><span class="scn-num">Case '+(idx+1)+'</span><span class="tag">'+'</span>'
     +'<span style="font-size:11px;font-weight:bold;color:#B9791C;background:#FBF1DF;border-radius:20px;padding:4px 11px">\u270F\uFE0F EDITING</span></div>';
   h+=edLabel('Client line (the quote shown as the case title)');
   h+=ceLine('ed_client',sc.clientLine,'What the client says\u2026','font-size:16px;font-weight:bold;color:#003F3C');
