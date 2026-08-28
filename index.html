@@ -221,7 +221,7 @@
       <div class="subtitle" id="subtitle">Read what the client says, dig a little, then name it.</div>
       <div class="group-name" id="groupLine"></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;margin-left:auto;flex-shrink:0">
       <div class="scorebox">
         <div class="chip"><div class="n" id="scoreN">0</div><div class="l">Score</div></div>
         <div class="chip"><div class="n" id="streakN">0</div><div class="l">Streak</div></div>
@@ -230,6 +230,7 @@
       <div class="toggles">
         <button class="mini-btn" id="musicBtn" onclick="toggleMusic()">&#127925; Music: On</button>
         <button class="mini-btn" id="soundBtn" onclick="toggleSound()">&#128266; SFX: On</button>
+        <button class="mini-btn" id="lbBtn" onclick="goLeaderboard()" title="View the shared leaderboard">&#127942; Leaderboard</button>
         <button class="mini-btn" id="resetBtn" onclick="hardReset()">&#8635; New</button>
         <button class="mini-btn" id="adminBtn" onclick="adminBtnClick()" title="Facilitator edit mode">&#128273; Admin</button>
       </div>
@@ -311,6 +312,16 @@ const SCENARIOS=[{"tag": "Playback", "clientLine": "“We discussed this before,
 /* ============ CONFIG / DATA ============ */
 const SAVE_KEY = "lal_scope_creep_v9";
 const EDITS_KEY = "lal_scope_creep_edits_v9";
+
+/* ============ OPTIONAL USER -> GROUP MAPPING ============
+   When ON, players pick their NAME and the group is auto-assigned
+   from a mapping table (lal_user_groups) instead of picking a group.
+   When OFF (default), the existing "select group + enter name" flow is used.
+*/
+const USE_USER_MAPPING = true;
+
+let USER_GROUP_MAP = {};   // { "Ally Kuek": "APAC Delivery Team 2", ... }
+let USER_LIST_CACHE = [];  // ["Ally Kuek", "Kenn Siang Leng", ...]
 /* FORMS and SCENARIOS injected above */
 const FORM_BY = {}; FORMS.forEach(f=>FORM_BY[f.key]=f);
 const Q_CAP = 2; /* number of questions a player may pick per case, equal to the count of 5pt questions */
@@ -327,6 +338,27 @@ async function fetchGroups(){
     const d=await r.json(); return d.map(x=>x.name);
   }catch(e){ console.warn("fetchGroups failed",e); return null; }
 }
+async function fetchUserMappings(){
+  try{
+    const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?select=user_name,group_name&order=user_name.asc",{headers:supaHeaders()});
+    if(!r.ok) throw new Error("http "+r.status);
+    const data=await r.json();
+    USER_GROUP_MAP={}; USER_LIST_CACHE=[];
+    data.forEach(row=>{
+      USER_GROUP_MAP[row.user_name]=row.group_name;
+      USER_LIST_CACHE.push(row.user_name);
+    });
+    return true;
+  }catch(e){ console.warn("fetchUserMappings failed",e); return false; }
+}
+async function addUserMappingRemote(user,group){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({user_name:user,group_name:group})});
+  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"add mapping failed");} return true;
+}
+async function deleteUserMappingRemote(user){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"DELETE",headers:supaHeaders()});
+  if(!r.ok){throw new Error("delete mapping failed");} return true;
+}
 async function addGroupRemote(name){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({name:name})});
   if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"add failed");} return true;
@@ -334,6 +366,14 @@ async function addGroupRemote(name){
 async function deleteGroupRemote(name){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_groups?name=eq."+encodeURIComponent(name),{method:"DELETE",headers:supaHeaders()});
   if(!r.ok){throw new Error("delete failed");} return true;
+}
+async function deleteScoresByGroupRemote(name){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_scores?group_name=eq."+encodeURIComponent(name),{method:"DELETE",headers:supaHeaders()});
+  if(!r.ok){throw new Error("delete scores failed");} return true;
+}
+async function deleteUserMappingsByGroupRemote(name){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?group_name=eq."+encodeURIComponent(name),{method:"DELETE",headers:supaHeaders()});
+  if(!r.ok){throw new Error("delete user mappings failed");} return true;
 }
 async function submitScoreRemote(payload){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_scores",{method:"POST",headers:supaHeaders({"Content-Type":"application/json"}),body:JSON.stringify(payload)});
@@ -395,20 +435,31 @@ function showTutorial(){
       </div>
        <!-- <div class="callout-tip"><b>The core message:</b> the point isn't to say no. It's to recognise it, log it, and let the process decide.</div> -->
       ${adminMode?adminTutorialQuickAdd():''}
+      ${USE_USER_MAPPING ? `
+      <p class="section-label" style="text-transform:none;font-size:13px">Select your name</p>
+      <select class="grp-input" id="userSelect" style="width:100%;margin-bottom:4px" disabled onchange="onUserSelectChange()"><option value="">Loading names\u2026</option></select>
+      <div style="display:flex;justify-content:flex-end;margin:-2px 0 12px">
+        <button type="button" onclick="loadUsersIntoTutorial()" style="background:none;border:none;color:#2E9E6B;font-weight:bold;font-size:12px;cursor:pointer;font-family:inherit">\u21BB Refresh names</button>
+      </div>
+      <div id="autoGroupLine" style="font-size:13px;color:#2E9E6B;font-weight:bold;margin:-6px 0 12px"></div>
+      ` : `
       <p class="section-label" style="text-transform:none;font-size:13px">Select your group</p>
       <select class="grp-input" id="grpSelect" style="width:100%;margin-bottom:4px" disabled><option value="">Loading groups\u2026</option></select>
       <div style="display:flex;justify-content:flex-end;margin:-2px 0 12px">
         <button type="button" onclick="loadGroupsIntoTutorial()" style="background:none;border:none;color:#2E9E6B;font-weight:bold;font-size:12px;cursor:pointer;font-family:inherit">\u21BB Refresh groups</button>
       </div>
+      `}
+      ${USE_USER_MAPPING ? '' : `
       <p class="section-label" style="text-transform:none;font-size:13px">Your name (whoever's playing this round)</p>
       <input class="grp-input" id="memInput" maxlength="60" style="width:100%;margin-bottom:12px" placeholder="e.g. John">
+      `}
       <div id="startErr" style="color:#c0392b;font-size:13px;font-weight:bold;display:none;margin-bottom:12px"></div>
       <div class="grp-row">
         <button class="btn btn-primary" onclick="startGame()">Start the challenge &#8594;</button>
       </div>
       <!-- <p class="tut-note">Progress saves automatically on this device. Your score is also submitted to the shared leaderboard so every group's results can be compared.</p> -->
     </div>`;
-  loadGroupsIntoTutorial();
+  if(USE_USER_MAPPING){ loadUsersIntoTutorial(); } else { loadGroupsIntoTutorial(); }
 }
 function adminTutorialQuickAdd(){
   return `<div style="background:#eef7ff;border:1px solid #cdd8ff;border-radius:10px;padding:10px 12px;margin-bottom:14px">
@@ -417,6 +468,7 @@ function adminTutorialQuickAdd(){
       <input id="tutQuickGroup" placeholder="New group name" style="flex:1;font-size:13px;padding:8px 10px;border:1.5px solid #cdd8ff;border-radius:8px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')tutQuickAdd()">
       <button onclick="tutQuickAdd()" style="background:#3B44FE;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">+ Add</button>
       <button onclick="openGroupManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Manage</button>
+      ${USE_USER_MAPPING?'<button onclick="openUserMappingManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">User mapping</button>':''}
     </div></div>`;
 }
 async function tutQuickAdd(){
@@ -435,16 +487,63 @@ async function loadGroupsIntoTutorial(){
   sel.disabled=false;
 }
 function refreshTutorialGroupsIfShown(){ if(!started && document.getElementById('grpSelect')) loadGroupsIntoTutorial(); }
-function startGame(){const sel=document.getElementById('grpSelect'),mi=document.getElementById('memInput');
-  const gname=(sel&&sel.value.trim())?sel.value.trim():"";
-  const mem=(mi&&mi.value.trim())?mi.value.trim():"";
-  if(!adminMode&&(!gname||!mem)){
-    const err=document.getElementById('startErr');
-    if(err){err.textContent=(!gname&&!mem)?'Please select your group and enter your name to begin.':(!gname?'Please select your group to begin.':'Please enter your name to begin.');err.style.display='block';}
-    if(sel)sel.style.borderColor=gname?'':'#c0392b';
-    if(mi)mi.style.borderColor=mem?'':'#c0392b';
-    if(soundOn)SFX.bad();return;
+async function loadUsersIntoTutorial(){
+  const sel=document.getElementById('userSelect'); if(!sel) return;
+  sel.innerHTML='<option value="">Loading names\u2026</option>'; sel.disabled=true;
+  const ok = await fetchUserMappings();
+  const lbl=document.getElementById('autoGroupLine'); if(lbl)lbl.textContent='';
+  if(!ok){ sel.innerHTML='<option value="">Could not load names, tap refresh to retry</option>'; sel.disabled=false; return; }
+  if(!USER_LIST_CACHE.length){ sel.innerHTML='<option value="">No names mapped yet, ask your facilitator to add one</option>'; sel.disabled=false; return; }
+  sel.innerHTML='<option value="">-- Select your name --</option>'+USER_LIST_CACHE.map(n=>'<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('');
+  sel.disabled=false;
+}
+function onUserSelectChange(){
+  const sel=document.getElementById('userSelect'); const lbl=document.getElementById('autoGroupLine');
+  if(!sel||!lbl)return;
+  const user=sel.value.trim();
+  const grp = user ? (USER_GROUP_MAP[user]||'') : '';
+  lbl.textContent = user ? (grp?('Group: '+grp):'No group mapped for this name yet, check with your facilitator.') : '';
+}
+function refreshTutorialUsersIfShown(){ if(!started && document.getElementById('userSelect')) loadUsersIntoTutorial(); }
+function startGame(){
+  let gname="", mem="";
+  let userSel=null, sel=null, mi=null;
+
+  if(USE_USER_MAPPING){
+    userSel=document.getElementById('userSelect');
+    const user=(userSel&&userSel.value.trim())?userSel.value.trim():"";
+    if(user){
+      gname = USER_GROUP_MAP[user] || "";
+      mem = user;
+    }
+  }else{
+    sel=document.getElementById('grpSelect'); mi=document.getElementById('memInput');
+    gname=(sel&&sel.value.trim())?sel.value.trim():"";
+    mem=(mi&&mi.value.trim())?mi.value.trim():"";
   }
+
+  if(!adminMode){
+    const err=document.getElementById('startErr');
+    if(USE_USER_MAPPING){
+      if(!mem){
+        if(err){err.textContent='Please select your name to begin.';err.style.display='block';}
+        if(userSel)userSel.style.borderColor='#c0392b';
+        if(soundOn)SFX.bad();return;
+      }
+      if(!gname){
+        if(err){err.textContent='No group is mapped for this name yet, please check with your facilitator.';err.style.display='block';}
+        if(soundOn)SFX.bad();return;
+      }
+    }else{
+      if(!gname||!mem){
+        if(err){err.textContent=(!gname&&!mem)?'Please select your group and enter your name to begin.':(!gname?'Please select your group to begin.':'Please enter your name to begin.');err.style.display='block';}
+        if(sel)sel.style.borderColor=gname?'':'#c0392b';
+        if(mi)mi.style.borderColor=mem?'':'#c0392b';
+        if(soundOn)SFX.bad();return;
+      }
+    }
+  }
+
   group=gname||"Admin test";members=mem||"Facilitator";
   started=true;idx=0;hypeStop();SFX.good();save();render();}
 
@@ -591,7 +690,7 @@ function results(){finished=true;updateHud();hypeStop();document.getElementById(
       <div class="res-actions">
         <button class="btn btn-primary" onclick="goLeaderboard()">\uD83C\uDFC6 View leaderboard</button>
         <button class="btn btn-ghost" onclick="downloadAnswerKeyPdf()" title="Facilitators only \u2013 requires the admin password">\uD83D\uDD11 Answer key (PDF)</button>
-        <button class="btn btn-ghost" onclick="hardReset()">Play again \u21BB</button>
+        <!-- <button class="btn btn-ghost" onclick="hardReset()">Play again \u21BB</button> -->
       </div>
     </div>`;save();}
 function buildPrintArea(bd){
@@ -665,10 +764,24 @@ async function goLeaderboard(){
     });
     const list=Object.keys(agg).map(g=>({group:g,total:agg[g].total,members:agg[g].names.join(', ')}));
     list.sort((a,b)=>b.total-a.total);
-    renderLeaderboard(list,null);
-  }catch(e){ renderLeaderboard([], 'Could not reach the leaderboard. Check your connection and try again.'); }
+    renderLeaderboard(list,null,rows);
+  }catch(e){ renderLeaderboard([], 'Could not reach the leaderboard. Check your connection and try again.', []); }
 }
-function renderLeaderboard(list, errMsg){
+function backFromLeaderboard(){
+  const m=document.getElementById('mascot');
+  if(finished){ results(); return; }
+  if(started){ if(m)m.style.display=''; render(); return; }
+  showTutorial();
+}
+function individualRowsHtml(rows){
+  const sorted=(rows||[]).slice().sort((a,b)=>(b.score||0)-(a.score||0));
+  return sorted.map(r=>'<tr>'
+    +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:left">'+escapeHtml(r.player_names||'-')+'</td>'
+    +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:left;font-weight:bold;color:#003F3C">'+escapeHtml(r.group_name||'-')+'</td>'
+    +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:center;font-weight:bold;color:#2E9E6B">'+(r.score||0)+'</td>'
+    +'</tr>').join('');
+}
+function renderLeaderboard(list, errMsg, rawRows){
   const top=list.slice(0,3), rest=list.slice(3);
   const podImg=[CHARS.thumbs,CHARS.wave,CHARS.search];
   function col(rank,item){ if(!item) return '';
@@ -678,6 +791,17 @@ function renderLeaderboard(list, errMsg){
   }
   const podiumHtml = top.length? '<div class="podium">'+col(2,top[1])+col(1,top[0])+col(3,top[2])+'</div>' : '';
   const restHtml = rest.map((it,i)=>'<div class="lb-row"><span class="lb-rank">'+(i+4)+'</span><span class="lb-gname">'+escapeHtml(it.group)+'</span><span class="lb-gmembers">'+escapeHtml(it.members||'')+'</span><span class="lb-gscore">'+it.total+'</span></div>').join('');
+  const backLabel = finished ? '\u2190 Back to my results' : (started ? '\u2190 Back to game' : '\u2190 Back to start');
+  const tableSection = errMsg ? '' : `
+      <p class="section-label" style="margin-top:24px;text-align:left">Individual results</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+        <thead><tr>
+          <th style="background:#003F3C;color:#fff;padding:8px 10px;text-align:left;border:1px solid #003F3C">Player(s)</th>
+          <th style="background:#003F3C;color:#fff;padding:8px 10px;text-align:left;border:1px solid #003F3C">Group</th>
+          <th style="background:#003F3C;color:#fff;padding:8px 10px;text-align:center;border:1px solid #003F3C">Score</th>
+        </tr></thead>
+        <tbody>${(rawRows&&rawRows.length)?individualRowsHtml(rawRows):'<tr><td colspan="3" style="border:1px solid #E3DED7;padding:10px;text-align:center;color:#8a938f;font-style:italic">No individual results yet.</td></tr>'}</tbody>
+      </table>`;
   document.getElementById('mascot').style.display='none';
   stage.innerHTML=`<div class="results">
       <h2>\uD83C\uDFC6 Leaderboard</h2>
@@ -686,10 +810,10 @@ function renderLeaderboard(list, errMsg){
       ${(!errMsg && !list.length)?'<p class="msg">No scores submitted yet, be the first!</p>':''}
       ${podiumHtml}
       <div class="lb-list">${restHtml}</div>
-      <div class="res-actions">
-        <button class="btn btn-ghost" onclick="results()">\u2190 Back to my results</button>
+      ${tableSection}
+      <div class="res-actions" style="margin-top:20px">
+        <button class="btn btn-ghost" onclick="backFromLeaderboard()">${backLabel}</button>
         <button class="btn btn-ghost" onclick="goLeaderboard()">\u21BB Refresh</button>
-        <button class="btn btn-primary" onclick="hardReset()">Play again \u21BB</button>
       </div>
     </div>`;
   if(!errMsg && list.length && soundOn) SFX.winnerJingle();
@@ -860,9 +984,61 @@ async function addGroupClick(){
   catch(e){ alert('Could not add that group, it may already exist or the connection dropped.'); }
 }
 async function removeGroup(name){
-  if(!confirm('Remove group "'+name+'"? Any scores already submitted for this group will stay on the leaderboard.'))return;
-  try{ await deleteGroupRemote(name); if(soundOn)SFX.click(); await openGroupManager(); refreshTutorialGroupsIfShown(); }
-  catch(e){ alert('Could not remove that group, check your connection and try again.'); }
+  if(!confirm('Remove group "'+name+'"? This will also delete every score submitted for this group and any user mappings pointing to it. This cannot be undone.'))return;
+  try{
+    await deleteScoresByGroupRemote(name);
+    await deleteUserMappingsByGroupRemote(name);
+    await deleteGroupRemote(name);
+    if(soundOn)SFX.click();
+    await openGroupManager(); refreshTutorialGroupsIfShown(); refreshTutorialUsersIfShown();
+  }
+  catch(e){ alert('Could not fully remove that group, check your connection and try again.'); }
+}
+
+/* ---- user -> group mapping management (Supabase-backed, only used when USE_USER_MAPPING is true) ---- */
+async function openUserMappingManager(){
+  let ov=document.getElementById('adminOverlay');
+  if(!ov){ov=document.createElement('div');ov.id='adminOverlay';document.body.appendChild(ov);}
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,32,30,.75);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 16px;font-family:Arial,Helvetica,sans-serif';
+  ov.innerHTML=userMappingManagerHtml('Loading user mapping\u2026', []);
+  const ok = await fetchUserMappings();
+  if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not reach the database, check your connection and reopen this panel.', []); return; }
+  const rows = USER_LIST_CACHE.map(u=>({user:u,group:USER_GROUP_MAP[u]}));
+  ov.innerHTML = userMappingManagerHtml(null, rows);
+}
+function userMappingManagerHtml(err, rows){
+  const list = (rows&&rows.length) ? rows.map(r=>
+      '<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px;gap:8px">'
+      +'<span style="font-weight:bold;color:#003F3C;flex:1">'+escapeHtml(r.user)+'</span>'
+      +'<span style="color:#5b6260;font-size:12.5px;flex:1;text-align:left">'+escapeHtml(r.group||'')+'</span>'
+      +'<button onclick="removeUserMapping(\''+r.user.replace(/'/g,"\\'")+'\')" style="'+EDDEL+'">Remove</button>'
+      +'</div>').join('')
+    : '<div style="font-size:13px;color:#8a938f;font-style:italic;margin-bottom:6px">No mappings yet, add one below.</div>';
+  return '<div style="background:#fff;border-radius:18px;max-width:520px;width:100%;padding:24px 24px 22px;box-shadow:0 18px 40px rgba(0,0,0,.35);margin-top:40px;font-family:Arial,Helvetica,sans-serif">'
+    +'<div style="font-size:12px;letter-spacing:2px;color:#2E9E6B;font-weight:bold">FACILITATOR</div>'
+    +'<div style="font-size:20px;font-weight:bold;color:#003F3C;margin:2px 0 4px">Manage user mapping</div>'
+    +'<div style="font-size:12.5px;color:#5b6260;margin-bottom:12px">Maps each player\'s name to a predefined group, so they only need to pick their name to join the right group.</div>'
+    +(err?'<div style="color:#c0392b;font-size:13px;margin-bottom:10px">'+escapeHtml(err)+'</div>':'')
+    +'<div style="max-height:280px;overflow:auto;margin-bottom:12px">'+list+'</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<input id="newMapUser" placeholder="Name (e.g. Ally Kuek)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit">'
+    +'<input id="newMapGroup" placeholder="Group (e.g. APAC Delivery Team 2)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit" onkeydown="if(event.key===\'Enter\')addUserMappingClick()">'
+    +'<button onclick="addUserMappingClick()" style="'+EDADD+'">+ Add</button>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:flex-end"><button onclick="closeAdmin()" style="background:#003F3C;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:bold;cursor:pointer;font-family:inherit">Done</button></div>'
+    +'</div>';
+}
+async function addUserMappingClick(){
+  const ui=document.getElementById('newMapUser'), gi=document.getElementById('newMapGroup');
+  const user=(ui&&ui.value||'').trim(), grp=(gi&&gi.value||'').trim();
+  if(!user||!grp)return;
+  try{ await addUserMappingRemote(user,grp); if(soundOn)SFX.good(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
+  catch(e){ alert('Could not add that mapping, it may already exist or the connection dropped.'); }
+}
+async function removeUserMapping(user){
+  if(!confirm('Remove the mapping for "'+user+'"?'))return;
+  try{ await deleteUserMappingRemote(user); if(soundOn)SFX.click(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
+  catch(e){ alert('Could not remove that mapping, check your connection and try again.'); }
 }
 
 /* ---- save the whole live page as a date-stamped HTML snapshot ---- */
@@ -927,6 +1103,7 @@ function adminBar(){
     +'<button onclick="startEdit()" style="background:#3B44FE;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">\u270F\uFE0F Edit this case</button>'
     +'<button onclick="showAnswerKey()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Answer key</button>'
     +'<button onclick="openGroupManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Manage groups</button>'
+    +(USE_USER_MAPPING?'<button onclick="openUserMappingManager()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">Manage user mapping</button>':'')
     +'<button onclick="saveWholeHtml()" style="background:#fff;color:#3B44FE;border:1.5px solid #cdd8ff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:bold;cursor:pointer;font-family:inherit">\uD83D\uDCBE Save HTML</button>'
     +'<span style="flex:1"></span>'
     +navBtn('adminPrev()','\u2190 Prev',first)
