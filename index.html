@@ -338,10 +338,16 @@ async function fetchGroups(){
     const d=await r.json(); return d.map(x=>x.name);
   }catch(e){ console.warn("fetchGroups failed",e); return null; }
 }
+let LAST_MAPPING_ERR="";
 async function fetchUserMappings(){
+  LAST_MAPPING_ERR="";
   try{
     const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?select=user_name,group_name&order=user_name.asc",{headers:supaHeaders()});
-    if(!r.ok) throw new Error("http "+r.status);
+    if(!r.ok){
+      const body=await r.text().catch(()=>"");
+      LAST_MAPPING_ERR="HTTP "+r.status+(body?(": "+body.slice(0,300)):"");
+      throw new Error(LAST_MAPPING_ERR);
+    }
     const data=await r.json();
     USER_GROUP_MAP={}; USER_LIST_CACHE=[];
     data.forEach(row=>{
@@ -349,7 +355,7 @@ async function fetchUserMappings(){
       USER_LIST_CACHE.push(row.user_name);
     });
     return true;
-  }catch(e){ console.warn("fetchUserMappings failed",e); return false; }
+  }catch(e){ if(!LAST_MAPPING_ERR)LAST_MAPPING_ERR=String(e&&e.message||e); console.warn("fetchUserMappings failed",e); return false; }
 }
 async function addUserMappingRemote(user,group){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({user_name:user,group_name:group})});
@@ -985,14 +991,24 @@ async function addGroupClick(){
 }
 async function removeGroup(name){
   if(!confirm('Remove group "'+name+'"? This will also delete every score submitted for this group and any user mappings pointing to it. This cannot be undone.'))return;
+  let cascadeIssue=false;
+  /* Scores and user-mapping cleanup are best-effort cascade steps. Neither table being
+     empty/missing (e.g. in the free-text-only flow where no mappings exist yet) should
+     block the actual group deletion below. */
+  try{ await deleteScoresByGroupRemote(name); }
+  catch(e){ console.warn('delete scores by group failed', e); cascadeIssue=true; }
+  try{ await deleteUserMappingsByGroupRemote(name); }
+  catch(e){ console.warn('delete user mappings by group failed', e); cascadeIssue=true; }
   try{
-    await deleteScoresByGroupRemote(name);
-    await deleteUserMappingsByGroupRemote(name);
     await deleteGroupRemote(name);
-    if(soundOn)SFX.click();
+  }catch(e){
+    alert('Could not remove that group, check your connection and try again.');
     await openGroupManager(); refreshTutorialGroupsIfShown(); refreshTutorialUsersIfShown();
+    return;
   }
-  catch(e){ alert('Could not fully remove that group, check your connection and try again.'); }
+  if(soundOn)SFX.click();
+  if(cascadeIssue){ flashAdmin('Group removed. Some related scores or user mappings may not have cleared, double-check the leaderboard and user mapping list.'); }
+  await openGroupManager(); refreshTutorialGroupsIfShown(); refreshTutorialUsersIfShown();
 }
 
 /* ---- user -> group mapping management (Supabase-backed, only used when USE_USER_MAPPING is true) ---- */
@@ -1002,7 +1018,7 @@ async function openUserMappingManager(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,32,30,.75);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 16px;font-family:Arial,Helvetica,sans-serif';
   ov.innerHTML=userMappingManagerHtml('Loading user mapping\u2026', []);
   const ok = await fetchUserMappings();
-  if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not reach the database, check your connection and reopen this panel.', []); return; }
+  if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not load user mappings. '+(LAST_MAPPING_ERR||'Check your connection and reopen this panel.'), []); return; }
   const rows = USER_LIST_CACHE.map(u=>({user:u,group:USER_GROUP_MAP[u]}));
   ov.innerHTML = userMappingManagerHtml(null, rows);
 }
@@ -1033,7 +1049,7 @@ async function addUserMappingClick(){
   const user=(ui&&ui.value||'').trim(), grp=(gi&&gi.value||'').trim();
   if(!user||!grp)return;
   try{ await addUserMappingRemote(user,grp); if(soundOn)SFX.good(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
-  catch(e){ alert('Could not add that mapping, it may already exist or the connection dropped.'); }
+  catch(e){ alert('Could not add that mapping: '+(e&&e.message?e.message:'it may already exist or the connection dropped.')); }
 }
 async function removeUserMapping(user){
   if(!confirm('Remove the mapping for "'+user+'"?'))return;
