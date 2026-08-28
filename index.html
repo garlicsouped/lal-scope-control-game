@@ -74,7 +74,18 @@
   .q-item .x{color:#b33;cursor:pointer;font-weight:bold;border:none;background:none;font-size:15px;line-height:1}
   .q-list.pick .q-item{cursor:pointer;transition:border-color .15s, background .15s}
   .q-list.pick .q-item:hover{border-left-color:var(--lancia-deep);background:#eef7f1}
-  .q-item.on{border-left-color:var(--lancia-deep);background:var(--green-bg)}
+  /* "on" (picked, post-Ask) is now a neutral ring only, so it never fights with the
+     tier's own background/border colour below. It used to force a green background
+     unconditionally, which combined with the wrong tier being used for questions
+     (see qTierClass below) caused 5pt questions to show amber and 3pt to show green,
+     the opposite of what the colours should mean. */
+  .q-item.on{box-shadow:inset 0 0 0 2px rgba(59,68,254,.30)}
+  .q-item.selpick{border-left-color:var(--blue);background:var(--blue-bg)}
+  .q-item.selpick .qcheck{color:var(--blue)}
+  .q-item.notpicked{opacity:.75}
+  .qask-row{display:flex;justify-content:flex-end;margin:-6px 0 18px}
+  .steps-pending{opacity:.5;pointer-events:none}
+  .steps-pending-note{font-size:12.5px;color:#9C6B2E;font-style:italic;margin:-6px 0 10px}
   .q-item .qcheck{flex-shrink:0;font-size:17px;line-height:1.2;color:var(--lancia-deep);margin-right:2px}
   .q-item.on .qcheck{color:var(--lancia-deep)}
   .q-item .reveal{margin-top:6px;font-size:13.5px;color:#20532f}
@@ -97,14 +108,22 @@
   .resp-opt:hover{border-color:var(--purple);box-shadow:0 4px 12px rgba(0,0,0,.08)}
   .resp-opt.sel{border-color:var(--purple);background:var(--purple-bg)}
   .resp-list.locked .resp-opt{cursor:default;opacity:.55}
-  .resp-list.locked .resp-opt.best{opacity:1;border-color:var(--lancia-deep);background:var(--green-bg);box-shadow:0 0 0 3px rgba(46,158,107,.22)}
-  .resp-list.locked .resp-opt.chosenbad{opacity:1;border-color:var(--red);background:var(--red-bg)}
+  /* NOTE: the JS never actually generates "best" or "chosenbad" classes, it
+     generates "tier-good" / "tier-mid" / "tier-low" / "tier-bad" for whichever
+     response was chosen. The rules below used to target the wrong class names,
+     so a chosen 10pt or 0pt response got no colour at all and just looked
+     dimmed like every other option, which is why it was hard to spot. */
+  .resp-list.locked .resp-opt.tier-good{opacity:1;border-color:var(--lancia-deep);background:var(--green-bg);box-shadow:0 0 0 4px rgba(46,158,107,.28)}
+  .resp-list.locked .resp-opt.tier-bad{opacity:1;border-color:var(--red);background:var(--red-bg);box-shadow:0 0 0 4px rgba(192,57,43,.22)}
   .resp-opt .rtag{display:inline-block;font-size:11px;font-weight:bold;border-radius:20px;padding:2px 9px;margin-top:8px}
-  .resp-opt .rtag.g{background:#d9f5e6;color:var(--lancia-deep)}
-  .resp-opt .rtag.b{background:#fbe1de;color:var(--red)}
+  .resp-opt .rtag.good{background:#d9f5e6;color:var(--lancia-deep)}
+  .resp-opt .rtag.bad{background:#fbe1de;color:var(--red)}
   .resp-opt .rnote{display:block;font-size:12.5px;color:#7a6a4a;margin-top:6px}
-  .resp-opt.best .rnote{color:#2c6b4d}
-  .resp-opt.chosenbad .rnote{color:#9c4b43}
+  .resp-opt.tier-good .rnote{color:#2c6b4d}
+  .resp-opt.tier-bad .rnote{color:#9c4b43}
+  /* Clear "your answer" marker so the chosen response is unmistakable at a glance,
+     regardless of which tier colour it happens to be. */
+  .resp-opt .ryours{display:inline-block;font-size:10.5px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;border-radius:20px;padding:3px 10px;margin-top:8px;margin-right:6px;background:#003F3C;color:#fff}
   .actions{display:flex;gap:10px;justify-content:flex-end}
   .btn{border:none;border-radius:12px;padding:13px 26px;font-size:16px;font-weight:bold;cursor:pointer;font-family:inherit;transition:transform .15s, background .2s}
   .btn:active{transform:scale(.97)}
@@ -188,8 +207,8 @@
   .qcap-note{font-size:12px;color:#8a938f;font-style:italic;margin:-6px 0 14px}
   .resp-opt .rnext{display:block;margin-top:8px;padding-top:8px;border-top:1px dashed #e3ded7;font-size:12.5px;color:#5b6260}
   .resp-opt .rnext b{color:var(--bottle)}
-  .resp-list.locked .resp-opt.tier-mid{opacity:1;border-color:var(--mid);background:var(--mid-bg)}
-  .resp-list.locked .resp-opt.tier-low{opacity:1;border-color:var(--low);background:var(--low-bg)}
+  .resp-list.locked .resp-opt.tier-mid{opacity:1;border-color:var(--mid);background:var(--mid-bg);box-shadow:0 0 0 4px rgba(138,90,18,.20)}
+  .resp-list.locked .resp-opt.tier-low{opacity:1;border-color:var(--low);background:var(--low-bg);box-shadow:0 0 0 4px rgba(156,107,46,.20)}
   .resp-opt .rtag.mid{background:#FBF1DF;color:var(--mid)}
   .resp-opt .rtag.low{background:#F4E9D8;color:var(--low)}
   .podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin:8px 0 26px;flex-wrap:wrap}
@@ -307,8 +326,9 @@ function hypeStart(){const m=document.getElementById('mascot');m.style.display='
   let on=true;document.getElementById('mascotBubble').textContent="Let's go!";
   if(hypeTimer)clearInterval(hypeTimer);
   hypeTimer=setInterval(()=>{on=!on;document.getElementById('mascotBubble').textContent=on?"Let's go!":"Let's go! \uD83D\uDE80";},650);}
-function hypeStop(){if(hypeTimer){clearInterval(hypeTimer);hypeTimer=null;}document.getElementById('mascot').classList.remove('hype');}const FORMS=[{"key": "more", "label": "More Of What's Already There", "meaning": "Beyond what we signed, but similar to what's already in there.", "emo": "📋"}, {"key": "new", "label": "A Brand-New Requirement", "meaning": "Something that isn't in the BRD at all.", "emo": "🆕"}, {"key": "change", "label": "A Change To What Was Agreed", "meaning": "The requirement stays, but the design or logic shifts after sign-off.", "emo": "🔄"}, {"key": "timeline", "label": "A Change In Timeline", "meaning": "A phase moves or compresses, or scope is swapped or dropped.", "emo": "⏱️"}];
-const SCENARIOS=[{"tag": "Playback", "clientLine": "“We discussed this before, you mentioned it in a meeting.”", "blurb": "<p>You're deep into a Client Playback session, things are going well, when a senior stakeholder frowns and leans in:</p><div class=\"quote\">“Wait ah, where's the auto-approval routing? I quite sure we talked about this in one of the early workshops, you also said it can work. My team has kind of been telling their bosses it's already inside.”</div><p>A couple of others around the table nod along like they remember it too. You check the BRD and workshop notes and confirm it was floated as an option, then parked, never written into the signed document.</p>", "answer": "new", "why": "It was floated as an option in a workshop but never written into the BRD or signed off. Not in agreed scope at all, so it's a brand-new requirement.", "deck": "A workshop mention isn't sign-off, check the signed document before you build.", "questions": [{"t": "I want to make sure we're aligned, could you share a bit more about what you were expecting auto-approval routing to actually do for your team?", "pts": 5, "info": "Gets at their expectation without putting them on the spot in front of others."}, {"t": "Is this something your team absolutely needs in place for this go-live, or is there some room to bring it in as a fast follow shortly after?", "pts": 5, "info": "Gently gauges urgency and materiality, informs the escalation decision."}, {"t": "Just to help me scope this properly, which specific approval steps were you picturing this covering?", "pts": 3, "info": "Useful detail for scoping, doesn't resolve whether it was ever agreed."}, {"t": "Was this ever written into the signed document we agreed on?", "pts": 0, "info": "Relevant content, but asked this directly in front of other stakeholders, it can feel like you're contradicting them publicly rather than working it through together."}, {"t": "Are you sure it was ever mentioned? I don't remember it coming up.", "pts": 0, "info": "Challenges the stakeholder's memory directly in front of others, feels accusatory rather than collaborative."}, {"t": "Since your team's already told their bosses it's in, can we just add it in now to avoid the awkwardness?", "pts": 0, "info": "Jumps straight to a solution based on social pressure, skips checking scope entirely."}], "responses": [{"t": "“You're right, and I remember it too. It didn't quite make it into the signed document though, so we'll need to treat this as a new requirement. Let me look into what it would take, and I'll come back to you with the details.”", "next": "Logs as a change request, brings to project lead to scope effort, responds with a timeline.", "pts": 10, "note": "Names the documentation gap honestly, given the visibility with senior stakeholders and the fact their team has already told others it's included, and captures it properly as new, scopeable work."}, {"t": "“You're right, and I remember it too. Let me dig through my notes from that early workshop, and if it turns out we did agree on it back then, I'll get it added in for you.”", "next": "Checks own workshop notes, adds the routing into the build.", "pts": 0, "note": "Quietly treats a workshop mention as if it could be sign-off, and skips logging it as new scope entirely."}, {"t": "“You're right, and I remember it too. Since your team's already mentioned it to their leadership, let me see what we can do to fit it into this phase, and I'll make sure it's noted on our side.”", "next": "Notes it internally, folds the work into the current phase's budget.", "pts": 5, "note": "Absorbs new scope into existing budget to protect the client's credibility, rather than raising it as its own scoped item for proper review."}]}, {"tag": "Reporting", "clientLine": "“It's basically the same as the other report, just one more.”", "blurb": "<p>A finance user drops you a warm note late Friday:</p><div class=\"quote\">“The five reports are great, whole team loves them, thank you! Just one more can? Basically the same as the others, and I recall the team mentioned previously that the reports reuses the exact same query, so I assume it should be quick? We really need it for the board pack next week.”</div><p>You check the signed scope and confirm 5 reports were agreed, and you know the underlying query is reusable, but the filters, layout, and testing for any new report would be fresh build.</p>", "answer": "more", "why": "Five reports were signed off; a sixth is beyond what we signed but similar in kind. The query is reusable, but the filters, layout, and testing are all fresh build.", "deck": "Similar-looking additions still carry real build and QA.", "questions": [{"t": "Would this report use the same filters and layout as the other five, or is there anything you'd want shown differently?", "pts": 5, "info": "Gets directly at whether this is a genuine copy or needs its own build."}, {"t": "Just so I can plan around your timeline properly, is this strictly needed for the board pack next week, or is there a little flexibility?", "pts": 5, "info": "Understands urgency without sounding like you're stalling."}, {"t": "Would this need to refresh on the same schedule as the other five?", "pts": 3, "info": "Useful detail, doesn't establish in or out of scope."}, {"t": "What exactly would you need this report to show that's different from the other five?", "pts": 0, "info": "Can come across as putting them on the spot to justify the request, as if they haven't thought it through."}, {"t": "Didn't we already say the five reports covered everything you needed?", "pts": 0, "info": "Sounds like you're pushing back on the request rather than investigating it."}, {"t": "Who else on your team would be using this sixth report?", "pts": 0, "info": "Interesting context, but doesn't move the scoping conversation forward at all."}], "responses": [{"t": "“Really glad they've been useful for the team. The queries can be reused, that's right, but this new report would still need its own filters, layout, and testing, so it's a bit more than a copy. Let's hop on a call to define it.”", "next": "Logs as a change request, checks capacity with project lead, confirms delivery date.", "pts": 10, "note": "Separates the reusable part from the real build, and checks resourcing rather than promising a date on the spot."}, {"t": "“Really glad they've been useful for the team. Since it reuses the same query, this shouldn't take very long at all on our side. Leave it with me, I'll have it ready for your board pack next week.”", "next": "Commits to next week's deadline, fits the build around other tasks.", "pts": 0, "note": "Commits to a deadline unilaterally without logging it as new scope or checking whether the team has room."}, {"t": "“Really glad they've been useful for the team. Since this one's a sixth on top of the five we agreed, I'll get it logged on our side, and I'll aim to have a draft ready ahead of the board pack.”", "next": "Logs it as a change, promises a draft for next week, scopes the filters after.", "pts": 5, "note": "Logging looks disciplined, but the delivery date is committed before the actual filters, layout, and testing effort is scoped."}]}, {"tag": "Build", "clientLine": "“It's tiny, can you squeeze it into this month?”", "blurb": "<p>You're right in the middle of a build when a user pings you directly:</p><div class=\"quote\">“Hi, sorry to bug you, small one only. My director wants a 'Last Modified By' column added to the export screen so we can see who last changed a record. Just ten minutes of work right? Would really help if it's in before the playback next week, will make us look good in front of leadership.”</div><p>You check the BRD and confirm this specific column was never part of what was agreed. You also check the export screen's design and confirm the change is isolated, no shared components reference this field, and no re-testing is needed elsewhere.</p>", "answer": "new", "why": "The column was never agreed, so it is technically new scope, but it's confirmed bounded, isolated, and low risk. The disciplined move is not to escalate this to a PM or run a full change request process, it's to log it yourself and action it using your own judgement.", "deck": "Small and new isn't the same as risky, know when to just log it and act.", "questions": [{"t": "Just to confirm, would this 'Last Modified By' column only need to show on this export screen, or would your director want to see it elsewhere too, like other reports?", "pts": 5, "info": "Verifies it's genuinely as contained as it looks."}, {"t": "Is this something your director specifically needs in place before the playback, or would having it ready shortly after also work?", "pts": 5, "info": "Gently assesses urgency for how to handle it."}, {"t": "Did your director mention wanting any other similar details added to this screen, or is this the only one for now?", "pts": 3, "info": "Useful for anticipating a pattern, not conclusive by itself."}, {"t": "What day this month do they want it live?", "pts": 0, "info": "Jumps straight to scheduling before anyone's actually decided whether to take this on."}, {"t": "Can I just add this without checking anything else, since it sounds simple?", "pts": 0, "info": "Assumes it's safe without actually verifying isolation/impact first."}, {"t": "Does your director need this visible to other users too, or just themselves?", "pts": 0, "info": "Too close in spirit to the existing 5pt 'would it show elsewhere' question, reads as redundant rather than distinct."}], "responses": [{"t": "“No worries at all, happy to take a look. Let me get this sorted for you and I'll make sure it's ready well before the playback next week, so you're covered with leadership.”", "next": "Logs it in the decision log, then makes the update.", "pts": 10, "note": "The scoping check already confirmed this is safe, bounded, and low effort, so it gets logged first (establishing the record) and then actioned directly, no unnecessary escalation needed."}, {"t": "“No worries at all, happy to help with this one. Should be straightforward on our end, I'll get it in before the playback so you're covered with leadership.”", "next": "Makes the update, mentions it in the weekly status note.", "pts": 3, "note": "Acts first, logs later as an afterthought, so there's no real record until after the fact if this is ever questioned."}, {"t": "“No worries at all, this sounds like a simple one. I'll flag it on our side for visibility and get it added before the playback so leadership sees it in place.”", "next": "Adds a line to the tracker, makes the update the same day.", "pts": 5, "note": "Looks like it's logged, but the update happens the same day with no real gap for review, so the 'flag' is cosmetic rather than a genuine check."}, {"t": "“No worries at all, appreciate you flagging this early. Let me just run this by my project lead first, then I'll get it sorted well before the playback.”", "next": "Checks with project lead, waits for their response before doing anything.", "pts": 3, "note": "Escalates something already confirmed safe and contained, exactly the kind of unnecessary escalation a PM would reasonably question, since the consultant already had everything needed to decide it themselves."}]}, {"tag": "Data", "clientLine": "“Common sense, right? Why wasn't this done already?”", "blurb": "<p>This cost centre entry screen was built for the client's finance team several years ago and has been running smoothly ever since. An admin messages you, a bit exasperated and cc'ing their manager:</p><div class=\"quote\">“Aiyo, shouldn't the system just block people from keying in a duplicate cost centre? This one common sense right? Two of my staff already made the mistake this week, first time this has happened since we started using the system, so quite surprised it wasn't there from the start. Can help add the validation quickly?”</div><p>You check the BRD and confirm this was only ever an unstated assumption, never written in as a validation requirement.</p>", "answer": "new", "why": "The rule was assumed, never specified. Not in agreed scope, however 'obvious' it sounds.", "deck": "Obvious-sounding asks can hide an assumption nobody ever wrote down.", "questions": [{"t": "Since this hasn't come up before in all the years this screen's been running, has anything changed recently on your side, like new team members joining or a new batch of cost centres being added?", "pts": 5, "info": "Gets at the actual root cause rather than jumping to a fix."}, {"t": "Based on what you're seeing, does this feel like a one off slip, or something that's likely to keep happening given what's changed?", "pts": 5, "info": "Understands recurrence without sounding like you're questioning whether the problem is real."}, {"t": "Would you want this to block entry entirely, or just show a warning so your team can double check?", "pts": 3, "info": "Gets expectations aligned on what a fix would look like, good for scoping the build, doesn't resolve whether it's new scope."}, {"t": "Is there a workaround your team could use in the meantime, like a manual check?", "pts": 0, "info": "Can come across as passing the problem back onto them, especially when they're already frustrated and have looped in their manager."}, {"t": "How many duplicate entries have your team run into so far?", "pts": 3, "info": "Useful for gauging severity, doesn't establish whether this is new scope."}, {"t": "Has this only happened with cost centre entries, or have you seen similar duplicate issues elsewhere in the system?", "pts": 3, "info": "Reasonable scoping question, but doesn't resolve whether it's new scope."}], "responses": [{"t": "“I completely understand, and thanks for flagging this. On review, this validation wasn't something we'd built in, the assumption was that duplicates wouldn't occur. Let me look into it and come back to you on the effort involved.”", "next": "Logs as a change request, brings to project lead to assess effort, confirms what changed first.", "pts": 10, "note": "Explains the rule was assumed not agreed, treats it as new, and finds out what changed before committing to a fix or timeline."}, {"t": "“I completely understand, and thanks for flagging this. Let me get that duplicate check added in quickly so your team isn't running into this error again this week.”", "next": "Builds the fix directly, mentions it to the team afterwards.", "pts": 0, "note": "Actions an unspecified rule before anyone's assessed it, never asks what changed or checks the hidden dependency."}, {"t": "“I completely understand, and thanks for flagging this with your manager too. This wasn't part of what we originally built, so I'll log it on our side and get moving on a fix.”", "next": "Logs it, prioritises a fix, moves straight to scoping the build.", "pts": 5, "note": "Sounds measured and does log it, but skips asking what changed or how often this occurs, so the fix gets shaped without understanding the root cause."}]}, {"tag": "Timeline", "clientLine": "“Since we can't have everything, let's just drop that requirement and do this one instead.”", "blurb": "<p>Back in Discovery, the client's PM weighed up two possible requirements, A and B, and after discussion formally chose Requirement A. This was written into the signed BRD, and Requirement B was parked. Fast forward to now, close to UAT, Requirement A has been fully built and tested. The same PM calls, friendly:</p><div class=\"quote\">“Since we can't have everything, let's just drop Requirement A and do Requirement B instead. Straight swap only mah, one out one in, shouldn't cost anything extra right? Actually might even be faster.”</div><p>You check the decision log from discovery and confirm A was formally chosen and signed off, with B parked. You also check the build log and confirm A is fully built and tested.</p>", "answer": "timeline", "why": "The definition includes scope being swapped or dropped. A was formally confirmed and is already built and tested, while B would be a fresh build with its own testing, so despite sounding like a neutral swap, we would effectively pay twice for a decision that was already settled once.", "deck": "A 'free' swap can mean paying twice, make the spent effort visible before agreeing.", "questions": [{"t": "Just to check, is Requirement A no longer needed going forward, or is this more about wanting B in first and coming back to A later?", "pts": 5, "info": "Helps understand whether the built effort is genuinely no longer wanted or just being deprioritised."}, {"t": "I remember we confirmed A together back in discovery, can I ask what's changed since then that's making B more of a priority now?", "pts": 5, "info": "Understands the shift in priority without sounding like you're challenging their decision."}, {"t": "Would B need to connect with anything we've already built for A, or would it stand on its own?", "pts": 3, "info": "Useful for effort scoping, not conclusive on cost."}, {"t": "Why do you suddenly want to swap now after already confirming A?", "pts": 0, "info": "Comes across as calling out an inconsistency in their decision, better to ask what's changed than to challenge the change itself."}, {"t": "Didn't we already spend a lot of effort building A? Why would you want to throw that away?", "pts": 0, "info": "Sounds like you're second-guessing their business judgement rather than neutrally gathering facts."}, {"t": "Is there a hard deadline driving why B needs to come in now?", "pts": 0, "info": "Mostly duplicates the 'what's changed' question in spirit without adding new signal."}], "responses": [{"t": "“A straight swap does sound fair, and I get where you're coming from. Just to flag, we confirmed A together back in discovery and it's already built and tested, while B would be a fresh build. Let me work out the real cost, then we can discuss.”", "next": "Logs as a change request, works out true cost with project lead, discusses before agreeing.", "pts": 10, "note": "Makes the sunk cost visible, reminds them gently this was already agreed once, and routes the cost decision through proper review rather than agreeing on the spot."}, {"t": "“A straight swap does sound fair, and since it's the same overall scope, happy to make that change for you. I'll just make sure B is properly built and tested before we reach go live.”", "next": "Updates the plan, proceeds with building B.", "pts": 0, "note": "Sounds diligent about quality, but accepts the swap as cost neutral and proceeds without ever surfacing that A's effort is sunk."}, {"t": "“A straight swap does sound fair, and I can see the logic there. I'll log this as a change on our side, and since we're dropping A, I'll factor that into the costing for B.”", "next": "Logs the change, nets A's spent effort against B's cost in the estimate.", "pts": 5, "note": "Logging looks disciplined, but treating A's spent effort as an offset against B's cost misrepresents the true additional cost to the client, sunk cost isn't recoverable."}]}];
+function hypeStop(){if(hypeTimer){clearInterval(hypeTimer);hypeTimer=null;}document.getElementById('mascot').classList.remove('hype');}
+/*DATA_START*/const FORMS=[{"key": "more", "label": "More Of What's Already There", "meaning": "Beyond what we signed, but similar to what's already in there.", "emo": "📋"}, {"key": "new", "label": "A Brand-New Requirement", "meaning": "Something that isn't in the BRD at all.", "emo": "🆕"}, {"key": "change", "label": "A Change To What Was Agreed", "meaning": "The requirement stays, but the design or logic shifts after sign-off.", "emo": "🔄"}, {"key": "timeline", "label": "A Change In Timeline", "meaning": "A phase moves or compresses, or scope is swapped or dropped.", "emo": "⏱️"}];
+const SCENARIOS=[{"tag": "Playback", "clientLine": "“We discussed this before, you mentioned it in a meeting.”", "blurb": "<p>You're deep into a Client Playback session, things are going well, when a senior stakeholder frowns and leans in:</p><div class=\"quote\">“Wait ah, where's the auto-approval routing? I quite sure we talked about this in one of the early workshops, you also said it can work. My team has kind of been telling their bosses it's already inside.”</div><p>A couple of others around the table nod along like they remember it too. You check the BRD and workshop notes and confirm it was floated as an option, then parked, never written into the signed document.</p>", "answer": "new", "why": "It was floated as an option in a workshop but never written into the BRD or signed off. Not in agreed scope at all, so it's a brand-new requirement.", "deck": "A workshop mention isn't sign-off, check the signed document before you build.", "questions": [{"t": "I want to make sure we're aligned, could you share a bit more about what you were expecting auto-approval routing to actually do for your team?", "pts": 5, "info": "Gets at their expectation without putting them on the spot in front of others."}, {"t": "Is this something your team absolutely needs in place for this go-live, or is there some room to bring it in as a fast follow shortly after?", "pts": 5, "info": "Gently gauges urgency and materiality, informs the escalation decision."}, {"t": "Just to help me scope this properly, which specific approval steps were you picturing this covering?", "pts": 3, "info": "Useful detail for scoping, doesn't resolve whether it was ever agreed."}, {"t": "Was this ever written into the signed document we agreed on?", "pts": 0, "info": "Relevant content, but asked this directly in front of other stakeholders, it can feel like you're contradicting them publicly rather than working it through together."}, {"t": "Are you sure it was ever mentioned? I don't remember it coming up.", "pts": 0, "info": "Challenges the stakeholder's memory directly in front of others, feels accusatory rather than collaborative."}, {"t": "Since your team's already told their bosses it's in, can we just add it in now to avoid the awkwardness?", "pts": 0, "info": "Jumps straight to a solution based on social pressure, skips checking scope entirely."}], "responses": [{"t": "“You're right, and I remember it too. It didn't quite make it into the signed document though, so we'll need to treat this as a new requirement. Let me look into what it would take, and I'll come back to you with the details.”", "next": "Logs as a change request, brings to project lead to scope effort, responds with a timeline.", "pts": 10, "note": "Names the documentation gap honestly, given the visibility with senior stakeholders and the fact their team has already told others it's included, and captures it properly as new, scopeable work."}, {"t": "“You're right, and I remember it too. Let me dig through my notes from that early workshop, and if it turns out we did agree on it back then, I'll get it added in for you.”", "next": "Checks own workshop notes, adds the routing into the build.", "pts": 0, "note": "Quietly treats a workshop mention as if it could be sign-off, and skips logging it as new scope entirely."}, {"t": "“You're right, and I remember it too. Since your team's already mentioned it to their leadership, let me see what we can do to fit it into this phase, and I'll make sure it's noted on our side.”", "next": "Notes it internally, folds the work into the current phase's budget.", "pts": 5, "note": "Absorbs new scope into existing budget to protect the client's credibility, rather than raising it as its own scoped item for proper review."}]}, {"tag": "Reporting", "clientLine": "“It's basically the same as the other report, just one more.”", "blurb": "<p>A finance user drops you a warm note late Friday:</p><div class=\"quote\">“The five reports are great, whole team loves them, thank you! Just one more can? Basically the same as the others, and I recall the team mentioned previously that the reports reuses the exact same query, so I assume it should be quick? We really need it for the board pack next week.”</div><p>You check the signed scope and confirm 5 reports were agreed, and you know the underlying query is reusable, but the filters, layout, and testing for any new report would be fresh build.</p>", "answer": "more", "why": "Five reports were signed off; a sixth is beyond what we signed but similar in kind. The query is reusable, but the filters, layout, and testing are all fresh build.", "deck": "Similar-looking additions still carry real build and QA.", "questions": [{"t": "Would this report use the same filters and layout as the other five, or is there anything you'd want shown differently?", "pts": 5, "info": "Gets directly at whether this is a genuine copy or needs its own build."}, {"t": "Just so I can plan around your timeline properly, is this strictly needed for the board pack next week, or is there a little flexibility?", "pts": 5, "info": "Understands urgency without sounding like you're stalling."}, {"t": "Would this need to refresh on the same schedule as the other five?", "pts": 3, "info": "Useful detail, doesn't establish in or out of scope."}, {"t": "What exactly would you need this report to show that's different from the other five?", "pts": 0, "info": "Can come across as putting them on the spot to justify the request, as if they haven't thought it through."}, {"t": "Didn't we already say the five reports covered everything you needed?", "pts": 0, "info": "Sounds like you're pushing back on the request rather than investigating it."}, {"t": "Who else on your team would be using this sixth report?", "pts": 0, "info": "Interesting context, but doesn't move the scoping conversation forward at all."}], "responses": [{"t": "“Really glad they've been useful for the team. The queries can be reused, that's right, but this new report would still need its own filters, layout, and testing, so it's a bit more than a copy. Let's hop on a call to define it.”", "next": "Logs as a change request, checks capacity with project lead, confirms delivery date.", "pts": 10, "note": "Separates the reusable part from the real build, and checks resourcing rather than promising a date on the spot."}, {"t": "“Really glad they've been useful for the team. Since it reuses the same query, this shouldn't take very long at all on our side. Leave it with me, I'll have it ready for your board pack next week.”", "next": "Commits to next week's deadline, fits the build around other tasks.", "pts": 0, "note": "Commits to a deadline unilaterally without logging it as new scope or checking whether the team has room."}, {"t": "“Really glad they've been useful for the team. Since this one's a sixth on top of the five we agreed, I'll get it logged on our side, and I'll aim to have a draft ready ahead of the board pack.”", "next": "Logs it as a change, promises a draft for next week, scopes the filters after.", "pts": 5, "note": "Logging looks disciplined, but the delivery date is committed before the actual filters, layout, and testing effort is scoped."}]}, {"tag": "Build", "clientLine": "“It's tiny, can you squeeze it into this month?”", "blurb": "<p>You're right in the middle of a build when a user pings you directly:</p><div class=\"quote\">“Hi, sorry to bug you, small one only. My director wants a 'Last Modified By' column added to the export screen so we can see who last changed a record. Just ten minutes of work right? Would really help if it's in before the playback next week, will make us look good in front of leadership.”</div><p>You check the BRD and confirm this specific column was never part of what was agreed. You also check the export screen's design and confirm the change is isolated, no shared components reference this field, and no re-testing is needed elsewhere.</p>", "answer": "new", "why": "The column was never agreed, so it is technically new scope, but it's confirmed bounded, isolated, and low risk. The disciplined move is not to escalate this to a PM or run a full change request process, it's to log it yourself and action it using your own judgement.", "deck": "Small and new isn't the same as risky, know when to just log it and act.", "questions": [{"t": "Just to confirm, would this 'Last Modified By' column only need to show on this export screen, or would your director want to see it elsewhere too, like other reports?", "pts": 5, "info": "Verifies it's genuinely as contained as it looks."}, {"t": "Is this something your director specifically needs in place before the playback, or would having it ready shortly after also work?", "pts": 5, "info": "Gently assesses urgency for how to handle it."}, {"t": "Did your director mention wanting any other similar details added to this screen, or is this the only one for now?", "pts": 3, "info": "Useful for anticipating a pattern, not conclusive by itself."}, {"t": "What day this month do they want it live?", "pts": 0, "info": "Jumps straight to scheduling before anyone's actually decided whether to take this on."}, {"t": "Can I just add this without checking anything else, since it sounds simple?", "pts": 0, "info": "Assumes it's safe without actually verifying isolation/impact first."}, {"t": "Does your director need this visible to other users too, or just themselves?", "pts": 0, "info": "Too close in spirit to the existing 5pt 'would it show elsewhere' question, reads as redundant rather than distinct."}], "responses": [{"t": "“No worries at all, happy to take a look. Let me get this sorted for you and I'll make sure it's ready well before the playback next week, so you're covered with leadership.”", "next": "Logs it in the decision log, then makes the update.", "pts": 10, "note": "The scoping check already confirmed this is safe, bounded, and low effort, so it gets logged first (establishing the record) and then actioned directly, no unnecessary escalation needed."}, {"t": "“No worries at all, happy to help with this one. Should be straightforward on our end, I'll get it in before the playback so you're covered with leadership.”", "next": "Makes the update, mentions it in the weekly status note.", "pts": 3, "note": "Acts first, logs later as an afterthought, so there's no real record until after the fact if this is ever questioned."}, {"t": "“No worries at all, this sounds like a simple one. I'll flag it on our side for visibility and get it added before the playback so leadership sees it in place.”", "next": "Adds a line to the tracker, makes the update the same day.", "pts": 5, "note": "Looks like it's logged, but the update happens the same day with no real gap for review, so the 'flag' is cosmetic rather than a genuine check."}, {"t": "“No worries at all, appreciate you flagging this early. Let me just run this by my project lead first, then I'll get it sorted well before the playback.”", "next": "Checks with project lead, waits for their response before doing anything.", "pts": 3, "note": "Escalates something already confirmed safe and contained, exactly the kind of unnecessary escalation a PM would reasonably question, since the consultant already had everything needed to decide it themselves."}]}, {"tag": "Data", "clientLine": "“Common sense, right? Why wasn't this done already?”", "blurb": "<p>This cost centre entry screen was built for the client's finance team several years ago and has been running smoothly ever since. An admin messages you, a bit exasperated and cc'ing their manager:</p><div class=\"quote\">“Aiyo, shouldn't the system just block people from keying in a duplicate cost centre? This one common sense right? Two of my staff already made the mistake this week, first time this has happened since we started using the system, so quite surprised it wasn't there from the start. Can help add the validation quickly?”</div><p>You check the BRD and confirm this was only ever an unstated assumption, never written in as a validation requirement.</p>", "answer": "new", "why": "The rule was assumed, never specified. Not in agreed scope, however 'obvious' it sounds.", "deck": "Obvious-sounding asks can hide an assumption nobody ever wrote down.", "questions": [{"t": "Since this hasn't come up before in all the years this screen's been running, has anything changed recently on your side, like new team members joining or a new batch of cost centres being added?", "pts": 5, "info": "Gets at the actual root cause rather than jumping to a fix."}, {"t": "Based on what you're seeing, does this feel like a one off slip, or something that's likely to keep happening given what's changed?", "pts": 5, "info": "Understands recurrence without sounding like you're questioning whether the problem is real."}, {"t": "Would you want this to block entry entirely, or just show a warning so your team can double check?", "pts": 3, "info": "Gets expectations aligned on what a fix would look like, good for scoping the build, doesn't resolve whether it's new scope."}, {"t": "Is there a workaround your team could use in the meantime, like a manual check?", "pts": 0, "info": "Can come across as passing the problem back onto them, especially when they're already frustrated and have looped in their manager."}, {"t": "How many duplicate entries have your team run into so far?", "pts": 3, "info": "Useful for gauging severity, doesn't establish whether this is new scope."}, {"t": "Has this only happened with cost centre entries, or have you seen similar duplicate issues elsewhere in the system?", "pts": 3, "info": "Reasonable scoping question, but doesn't resolve whether it's new scope."}], "responses": [{"t": "“I completely understand, and thanks for flagging this. On review, this validation wasn't something we'd built in, the assumption was that duplicates wouldn't occur. Let me look into it and come back to you on the effort involved.”", "next": "Logs as a change request, brings to project lead to assess effort, confirms what changed first.", "pts": 10, "note": "Explains the rule was assumed not agreed, treats it as new, and finds out what changed before committing to a fix or timeline."}, {"t": "“I completely understand, and thanks for flagging this. Let me get that duplicate check added in quickly so your team isn't running into this error again this week.”", "next": "Builds the fix directly, mentions it to the team afterwards.", "pts": 0, "note": "Actions an unspecified rule before anyone's assessed it, never asks what changed or checks the hidden dependency."}, {"t": "“I completely understand, and thanks for flagging this with your manager too. This wasn't part of what we originally built, so I'll log it on our side and get moving on a fix.”", "next": "Logs it, prioritises a fix, moves straight to scoping the build.", "pts": 5, "note": "Sounds measured and does log it, but skips asking what changed or how often this occurs, so the fix gets shaped without understanding the root cause."}]}, {"tag": "Timeline", "clientLine": "“Since we can't have everything, let's just drop that requirement and do this one instead.”", "blurb": "<p>Back in Discovery, the client's PM weighed up two possible requirements, A and B, and after discussion formally chose Requirement A. This was written into the signed BRD, and Requirement B was parked. Fast forward to now, close to UAT, Requirement A has been fully built and tested. The same PM calls, friendly:</p><div class=\"quote\">“Since we can't have everything, let's just drop Requirement A and do Requirement B instead. Straight swap only mah, one out one in, shouldn't cost anything extra right? Actually might even be faster.”</div><p>You check the decision log from discovery and confirm A was formally chosen and signed off, with B parked. You also check the build log and confirm A is fully built and tested.</p>", "answer": "timeline", "why": "The definition includes scope being swapped or dropped. A was formally confirmed and is already built and tested, while B would be a fresh build with its own testing, so despite sounding like a neutral swap, we would effectively pay twice for a decision that was already settled once.", "deck": "A 'free' swap can mean paying twice, make the spent effort visible before agreeing.", "questions": [{"t": "Just to check, is Requirement A no longer needed going forward, or is this more about wanting B in first and coming back to A later?", "pts": 5, "info": "Helps understand whether the built effort is genuinely no longer wanted or just being deprioritised."}, {"t": "I remember we confirmed A together back in discovery, can I ask what's changed since then that's making B more of a priority now?", "pts": 5, "info": "Understands the shift in priority without sounding like you're challenging their decision."}, {"t": "Would B need to connect with anything we've already built for A, or would it stand on its own?", "pts": 3, "info": "Useful for effort scoping, not conclusive on cost."}, {"t": "Why do you suddenly want to swap now after already confirming A?", "pts": 0, "info": "Comes across as calling out an inconsistency in their decision, better to ask what's changed than to challenge the change itself."}, {"t": "Didn't we already spend a lot of effort building A? Why would you want to throw that away?", "pts": 0, "info": "Sounds like you're second-guessing their business judgement rather than neutrally gathering facts."}, {"t": "Is there a hard deadline driving why B needs to come in now?", "pts": 0, "info": "Mostly duplicates the 'what's changed' question in spirit without adding new signal."}], "responses": [{"t": "“A straight swap does sound fair, and I get where you're coming from. Just to flag, we confirmed A together back in discovery and it's already built and tested, while B would be a fresh build. Let me work out the real cost, then we can discuss.”", "next": "Logs as a change request, works out true cost with project lead, discusses before agreeing.", "pts": 10, "note": "Makes the sunk cost visible, reminds them gently this was already agreed once, and routes the cost decision through proper review rather than agreeing on the spot."}, {"t": "“A straight swap does sound fair, and since it's the same overall scope, happy to make that change for you. I'll just make sure B is properly built and tested before we reach go live.”", "next": "Updates the plan, proceeds with building B.", "pts": 0, "note": "Sounds diligent about quality, but accepts the swap as cost neutral and proceeds without ever surfacing that A's effort is sunk."}, {"t": "“A straight swap does sound fair, and I can see the logic there. I'll log this as a change on our side, and since we're dropping A, I'll factor that into the costing for B.”", "next": "Logs the change, nets A's spent effort against B's cost in the estimate.", "pts": 5, "note": "Logging looks disciplined, but treating A's spent effort as an offset against B's cost misrepresents the true additional cost to the client, sunk cost isn't recoverable."}]}];/*DATA_END*/
 /* ============ CONFIG / DATA ============ */
 const SAVE_KEY = "lal_scope_creep_v9";
 const EDITS_KEY = "lal_scope_creep_edits_v9";
@@ -382,7 +402,15 @@ async function deleteUserMappingsByGroupRemote(name){
   if(!r.ok){throw new Error("delete user mappings failed");} return true;
 }
 async function submitScoreRemote(payload){
-  const r=await fetch(SUPA_URL+"/rest/v1/lal_scores",{method:"POST",headers:supaHeaders({"Content-Type":"application/json"}),body:JSON.stringify(payload)});
+  /* Upsert on (group_name, player_names): if this group+player already has a score row,
+     replace it with the new one instead of inserting a duplicate. This means re-playing
+     always overwrites rather than stacking up extra rows on the leaderboard.
+     Requires a unique constraint in Supabase, see setup note below. */
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_scores?on_conflict=group_name,player_names",{
+    method:"POST",
+    headers:supaHeaders({"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=representation"}),
+    body:JSON.stringify(payload)
+  });
   if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"submit failed");} return true;
 }
 async function fetchAllScores(){
@@ -395,6 +423,9 @@ async function fetchAllScores(){
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function tierClass(pts){ if(pts>=10) return 'good'; if(pts>=5) return 'mid'; if(pts>=3) return 'low'; return 'bad'; }
+/* Questions only ever have 3 possible point values (5 / 3 / 0), unlike responses
+   (10 / 5 / 3 / 0), so they get their own tier mapping: 5=green, 3=yellow/amber, 0=red. */
+function qTierClass(pts){ if(pts>=5) return 'good'; if(pts>=3) return 'mid'; return 'bad'; }
 
 /* ============ STATE ============ */
 let idx=0,score=0,streak=0,bestStreak=0,formCorrect=0,respCorrect=0,group="",members="",finished=false,started=false;
@@ -407,11 +438,11 @@ const MSG_INTRO=["Read it closely...","Creep, or not?","Trust your radar.","What
 function freshState(){const st=[];SCENARIOS.forEach(sc=>{
   sc.qorder=shuffle(sc.questions.map((q,i)=>i));
   sc.rorder=shuffle(sc.responses.map((o,i)=>i));
-  st.push({picked:[],form:null,resp:null,locked:false,formRight:false,respPts:0});});return st;}
+  st.push({picked:[],form:null,resp:null,locked:false,formRight:false,respPts:0,qLocked:false});});return st;}
 
 /* ============ PERSISTENCE ============ */
 function save(){try{const d={v:9,idx,score,streak,bestStreak,formCorrect,respCorrect,group,members,finished,started,soundOn,musicOn,scoreSubmitted,
-  state:state.map(s=>({picked:s.picked,form:s.form,resp:s.resp,locked:s.locked,formRight:s.formRight,respPts:s.respPts})),
+  state:state.map(s=>({picked:s.picked,form:s.form,resp:s.resp,locked:s.locked,formRight:s.formRight,respPts:s.respPts,qLocked:s.qLocked})),
   qorder:SCENARIOS.map(sc=>sc.qorder),rorder:SCENARIOS.map(sc=>sc.rorder)};
   localStorage.setItem(SAVE_KEY,JSON.stringify(d));}catch(e){}}
 function load(){try{const r=localStorage.getItem(SAVE_KEY);if(!r)return null;const d=JSON.parse(r);if(!d||d.v!==9)return null;return d;}catch(e){return null;}}
@@ -559,21 +590,38 @@ function render(){
   const sc=SCENARIOS[idx],st=state[idx];updateHud();
   if(!st.locked)setMascot(idx%2?'search':'wave',MSG_INTRO[idx%MSG_INTRO.length]);
   const capReached = st.picked.length>=Q_CAP;
+  const qAsked = !!st.qLocked;
+  /* Step 1 has two phases: pick (checkbox only, no reveal/points yet) then, once "Ask"
+     is pressed, every question (picked AND not picked) reveals its info and tier so the
+     player learns why each one was strong or weak, not just the ones they chose. */
   const qlistHtml=sc.qorder.map(i=>{const q=sc.questions[i];
-    const on=st.picked.includes(i);
-    const disabled = !st.locked && !on && capReached;
-    const tier = on ? tierClass(q.pts) : '';
-    let cls="q-item"+(on?(' on '+tier):'')+(disabled?' disabled':'');
-    const clickable = !st.locked && !on && !disabled;
-    return `<div class="${cls}" ${clickable?`onclick="toggleQ(${i})"`:''}>
-      <div class="qtop"><span class="qcheck">${on?'\u2611':'\u2610'}</span><span class="qtext">${escapeHtml(q.t)}</span>${on?`<span class="qpts">+${q.pts} pts</span>`:''}</div>
-      ${on?`<div class="reveal"><b>What you'd learn:</b> ${escapeHtml(q.info)}</div>`:''}
+    const picked=st.picked.includes(i);
+    if(!qAsked){
+      const disabled = !picked && capReached;
+      let cls="q-item"+(picked?' selpick':'')+(disabled?' disabled':'');
+      const clickable = !disabled;
+      return `<div class="${cls}" ${clickable?`onclick="toggleQ(${i})"`:''}>
+        <div class="qtop"><span class="qcheck">${picked?'\u2611':'\u2610'}</span><span class="qtext">${escapeHtml(q.t)}</span></div>
+      </div>`;
+    }
+    const tier=qTierClass(q.pts);
+    const cls="q-item "+tier+(picked?' on':' notpicked');
+    const ptsTag = picked
+      ? `<span class="qpts">+${q.pts} pts</span>`
+      : `<span class="qpts" style="opacity:.6">Worth ${q.pts} pts</span>`;
+    return `<div class="${cls}">
+      <div class="qtop"><span class="qcheck">${picked?'\u2611':'\u2610'}</span><span class="qtext">${escapeHtml(q.t)}</span>${ptsTag}</div>
+      <div class="reveal"><b>What you'd learn:</b> ${escapeHtml(q.info)}</div>
     </div>`;}).join("");
-  const capNote = (!st.locked) ? `<p class="qcap-note">${capReached?('You\'ve used your '+Q_CAP+' picks for this case.'):('You can pick up to '+Q_CAP+' questions, '+ (Q_CAP-st.picked.length) +' left.')}</p>` : '';
+  const capNote = (!qAsked) ? `<p class="qcap-note">${capReached?('You\'ve used your '+Q_CAP+' picks for this case.'):('You can pick up to '+Q_CAP+' questions, '+ (Q_CAP-st.picked.length) +' left.')}</p>` : '';
+  const askRow = (!qAsked) ? `<div class="qask-row"><button class="btn btn-primary" onclick="askQuestions()">Ask these questions \u2192</button></div>` : '';
+  const stepsUnlocked = qAsked; /* Steps 2 & 3 only open up once Step 1's questions have been asked */
+  const pendingNote = (!stepsUnlocked) ? `<p class="steps-pending-note">Ask your Step 1 questions first to unlock this step.</p>` : '';
   const formsHtml=FORMS.map(f=>{let cls="form-btn";
     if(!st.locked&&st.form===f.key)cls+=" sel";
     if(st.locked){ if(f.key===sc.answer)cls+=" correct"; else if(f.key===st.form)cls+=" wrong"; }
-    return `<div class="${cls}" ${st.locked?'':`onclick="selectForm('${f.key}')"`}>
+    const clickable = stepsUnlocked && !st.locked;
+    return `<div class="${cls}" ${clickable?`onclick="selectForm('${f.key}')"`:''}>
       <div class="flabel"><span class="emo">${f.emo}</span>${escapeHtml(f.label)}</div>
       <span class="fmean">${escapeHtml(f.meaning)}</span></div>`;}).join("");
   const respHtml=sc.rorder.map(i=>{const o=sc.responses[i];const tier=tierClass(o.pts);let cls="resp-opt";
@@ -581,10 +629,11 @@ function render(){
     if(st.locked){ cls+=" "+(i===st.resp?('chosen tier-'+tier):''); }
     let tail="";
     if(st.locked && i===st.resp){
-      tail = `<span class="rtag ${tier}">${o.pts>=10?'\u2713 Best response':'+'+o.pts+' pts'}</span><span class="rnote">${escapeHtml(o.note)}</span>`;
+      tail = `<span class="ryours">\u2713 Your answer</span><span class="rtag ${tier}">${o.pts>=10?'Best response':'+'+o.pts+' pts'}</span><span class="rnote">${escapeHtml(o.note)}</span>`;
     }
-    return `<div class="${cls}" ${st.locked?'':`onclick="selectResp(${i})"`}>${escapeHtml(o.t)}<span class="rnext"><b>Next step:</b> ${escapeHtml(o.next)}</span>${tail}</div>`;}).join("");
-  const canVerify = st.form!=null && st.resp!=null;
+    const clickable = stepsUnlocked && !st.locked;
+    return `<div class="${cls}" ${clickable?`onclick="selectResp(${i})"`:''}>${escapeHtml(o.t)}<span class="rnext"><b>Next step:</b> ${escapeHtml(o.next)}</span>${tail}</div>`;}).join("");
+  const canVerify = stepsUnlocked && st.form!=null && st.resp!=null;
   stage.innerHTML=`
     <div class="card">
       <div class="card-head"><span class="scn-num">Case ${idx+1}</span><span class="tag">${escapeHtml(sc.tag)}</span></div>
@@ -592,28 +641,42 @@ function render(){
       <div class="client-line">${escapeHtml(sc.clientLine)}</div>
       <div class="scn-rich">${sc.blurb}</div>
       <p class="section-label">Step 1 &middot; Ask the right questions</p>
-      <p class="section-hint">Tick any questions you would ask, each one locks in as soon as you tick it.</p>
-      <div class="q-list${st.locked?'':' pick'}">${qlistHtml}</div>
+      <p class="section-hint">${qAsked?'Here\'s why each question was strong or weak, whether you asked it or not.':('Tick up to '+Q_CAP+' questions you would ask, then select \u201cAsk these questions\u201d to lock them in.')}</p>
+      <div class="q-list${qAsked?'':' pick'}">${qlistHtml}</div>
       ${capNote}
+      ${askRow}
       <p class="section-label">Step 2 &middot; Name it <span style="color:var(--lancia-deep)">(10 pts)</span></p>
       <p class="section-hint">Which form of scope creep is this?</p>
-      <div class="forms ${st.locked?'locked':''}">${formsHtml}</div>
+      ${pendingNote}
+      <div class="forms ${st.locked?'locked':''}${stepsUnlocked?'':' steps-pending'}">${formsHtml}</div>
       <p class="section-label">Step 3 &middot; Pick your response <span style="color:var(--lancia-deep)">(up to 10 pts)</span></p>
       <p class="section-hint">Each option includes what happens next, read the whole thing before you choose.</p>
-      <div class="resp-list ${st.locked?'locked':''}">${respHtml}</div>
+      <div class="resp-list ${st.locked?'locked':''}${stepsUnlocked?'':' steps-pending'}">${respHtml}</div>
       <div class="actions">
         ${st.locked?`<button class="btn btn-ghost" onclick="next()">${idx===SCENARIOS.length-1?'See results \u2192':'Next case \u2192'}</button>`
           :`<button class="btn btn-primary" ${canVerify?'':'disabled'} onclick="verify()">Verify my answer</button>`}
       </div>
-      <div class="feedback ${st.locked?((st.formRight&&st.respPts===10)?'right show':'close show'):''}">${st.locked?feedback(sc,st):''}</div>
+      <div class="feedback ${st.locked?(isFullMarks(sc,st)?'right show':'close show'):''}">${st.locked?feedback(sc,st):''}</div>
     </div>`;
+}
+/* Max points obtainable from Step 1 (questions) for a given case: the sum of the
+   top Q_CAP question values. This is normally 2x5=10, but computed dynamically
+   so it stays correct if a case is ever edited to have different point values. */
+function maxQPts(sc){
+  return sc.questions.slice().sort((a,b)=>(b.pts||0)-(a.pts||0)).slice(0,Q_CAP).reduce((s,q)=>s+(q.pts||0),0);
+}
+/* "Full marks" now requires all three parts to be maxed: the questions picked (Step 1),
+   the form (Step 2), and the response (Step 3) - i.e. 30/30, not just 2 out of 3. */
+function isFullMarks(sc,st){
+  const qPts = st.picked.reduce((s,i)=>s+(sc.questions[i].pts||0),0);
+  return qPts>=maxQPts(sc) && st.formRight && (st.respPts||0)===10;
 }
 function feedback(sc,st){
   const qPts = st.picked.reduce((s,i)=>s+(sc.questions[i].pts||0),0);
   const formPts = st.formRight?10:0;
   const respPts = st.respPts||0;
   const total = qPts+formPts+respPts;
-  const both=st.formRight&&respPts===10;
+  const both=isFullMarks(sc,st);
   const head=`<div class="fb-head ${both?'right':'close'}">${both?'\uD83C\uDF89 Full marks on this one!':(total>=15?'\uD83D\uDC4D Solid, let\u2019s look':'\uD83E\uDD14 Not quite, let\u2019s look')}</div>`;
   const bestResp=sc.responses.find(o=>o.pts>=10);
   return `${head}
@@ -629,17 +692,25 @@ function feedback(sc,st){
     <div class="fb-deck">${escapeHtml(sc.deck)}</div>`;
 }
 /* ============ ACTIONS ============ */
-function toggleQ(i){const sc=SCENARIOS[idx],st=state[idx];if(st.locked)return;if(st.picked.includes(i))return;
+/* Step 1 is now select-then-confirm: toggleQ only toggles the checkbox (no points, no
+   reveal yet, and picks can be freely changed). Points and the good/bad reveal for every
+   question (asked or not) only happen once askQuestions() is triggered. */
+function toggleQ(i){const st=state[idx];if(st.locked||st.qLocked)return;
+  if(st.picked.includes(i)){ st.picked=st.picked.filter(x=>x!==i); if(soundOn)SFX.click(); save();render(); return; }
   if(st.picked.length>=Q_CAP){ if(soundOn)SFX.bad(); return; }
-  st.picked.push(i);
-  const pts=sc.questions[i].pts||0; score+=pts;
-  if(pts>=5){SFX.reveal();setMascot('search','+'+pts+' pts, nice catch!');}
-  else if(pts>0){SFX.ping();setMascot('search','+'+pts+' pts, partial credit.');}
-  else{SFX.click();setMascot('search','+0 pts, but now you know.');}
+  st.picked.push(i); if(soundOn)SFX.click(); save();render();}
+function askQuestions(){const sc=SCENARIOS[idx],st=state[idx];if(st.locked||st.qLocked)return;
+  st.qLocked=true;
+  const qPts=st.picked.reduce((s,i)=>s+(sc.questions[i].pts||0),0);
+  score+=qPts;
+  const maxP=maxQPts(sc);
+  if(maxP>0&&qPts>=maxP){SFX.correct();setMascot('search','+'+qPts+' pts, sharp questions!');}
+  else if(qPts>0){SFX.reveal();setMascot('search','+'+qPts+' pts, partial credit.');}
+  else{SFX.click();setMascot('search','+0 pts, but now you know why.');}
   save();render();}
-function selectForm(k){const st=state[idx];if(st.locked)return;st.form=k;SFX.click();render();}
-function selectResp(i){const st=state[idx];if(st.locked)return;st.resp=i;SFX.ping();render();}
-function verify(){const sc=SCENARIOS[idx],st=state[idx];if(st.locked||st.form==null||st.resp==null)return;
+function selectForm(k){const st=state[idx];if(st.locked||!st.qLocked)return;st.form=k;SFX.click();render();}
+function selectResp(i){const st=state[idx];if(st.locked||!st.qLocked)return;st.resp=i;SFX.ping();render();}
+function verify(){const sc=SCENARIOS[idx],st=state[idx];if(st.locked||!st.qLocked||st.form==null||st.resp==null)return;
   st.locked=true;
   st.formRight=(st.form===sc.answer);
   const chosen=sc.responses[st.resp];
@@ -1073,9 +1144,32 @@ async function removeUserMapping(user){
 }
 
 /* ---- save the whole live page as a date-stamped HTML snapshot ---- */
+/* Builds a fresh "const FORMS=...;const SCENARIOS=...;" source block from the
+   LIVE (possibly edited) in-memory data, using JSON.stringify so any characters
+   a facilitator typed (quotes, line breaks, unicode, etc.) are always safely
+   escaped. This is what makes case edits permanent in the exported file rather
+   than only living in this browser's localStorage. */
+function serializeDataBlock(){
+  const formsOut = FORMS.map(f=>({key:f.key,label:f.label,meaning:f.meaning,emo:f.emo}));
+  const scenariosOut = SCENARIOS.map(sc=>({
+    tag:sc.tag, clientLine:sc.clientLine, blurb:sc.blurb, answer:sc.answer, why:sc.why, deck:sc.deck,
+    questions:sc.questions.map(q=>({t:q.t,pts:q.pts||0,info:q.info||""})),
+    responses:sc.responses.map(o=>({t:o.t,next:o.next||"",pts:o.pts||0,note:o.note||""}))
+  }));
+  return 'const FORMS='+JSON.stringify(formsOut)+';const SCENARIOS='+JSON.stringify(scenariosOut)+';';
+}
 function saveWholeHtml(){
   try{
-    const html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+    let html='<!DOCTYPE html>\n'+document.documentElement.outerHTML;
+    /* Replace whatever sits between the DATA_START/DATA_END markers (the original
+       or previously-saved FORMS/SCENARIOS block) with the current live data,
+       so every edit you've made in this session is baked into the file itself. */
+    const marker=/\/\*DATA_START\*\/[\s\S]*?\/\*DATA_END\*\//;
+    if(marker.test(html)){
+      html = html.replace(marker, '/*DATA_START*/'+serializeDataBlock()+'/*DATA_END*/');
+    }else{
+      console.warn('Save HTML: data markers not found, exporting without baking in edits.');
+    }
     const blob=new Blob([html],{type:'text/html'});
     const url=URL.createObjectURL(blob);
     const d=new Date(); const stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -1083,7 +1177,7 @@ function saveWholeHtml(){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 4000);
     if(soundOn)SFX.good();
-    flashAdmin('Saved a full snapshot of the current game as '+a.download);
+    flashAdmin('Saved a full snapshot with all your case edits baked in as '+a.download);
   }catch(e){ alert('Could not save the file: '+e.message); }
 }
 
@@ -1147,7 +1241,7 @@ function adminNext(){if(!adminMode)return;if(editing){if(!confirm('Discard unsav
 function startEdit(){if(!adminMode)return;editBuf=editableSnapshot(SCENARIOS[idx]);editing=true;if(soundOn)SFX.click();render();}
 function cancelEdit(){editing=false;editBuf=null;if(soundOn)SFX.click();render();}
 function saveEdit(){syncEditBuf();mergeInto(SCENARIOS[idx],editBuf);rebuildOrders();
-  const st=state[idx];if(st){st.picked=[];st.form=null;st.resp=null;st.locked=false;st.formRight=false;st.respPts=0;}
+  const st=state[idx];if(st){st.picked=[];st.form=null;st.resp=null;st.locked=false;st.formRight=false;st.respPts=0;st.qLocked=false;}
   persistEdits();editing=false;editBuf=null;if(soundOn)SFX.good();flashAdmin('Saved. This case is updated live and remembered on this device.');render();}
 function _t(id){const e=document.getElementById(id);return e?e.innerText.replace(/\u00a0/g,' ').replace(/\s+\n/g,'\n').trim():'';}
 function _h(id){const e=document.getElementById(id);return e?e.innerHTML.trim():'';}
