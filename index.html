@@ -112,8 +112,15 @@
      response was chosen. The rules below used to target the wrong class names,
      so a chosen 10pt or 0pt response got no colour at all and just looked
      dimmed like every other option, which is why it was hard to spot. */
-  .resp-list.locked .resp-opt.tier-good{opacity:1;border-color:var(--lancia-deep);background:var(--green-bg);box-shadow:0 0 0 4px rgba(46,158,107,.28)}
-  .resp-list.locked .resp-opt.tier-bad{opacity:1;border-color:var(--red);background:var(--red-bg);box-shadow:0 0 0 4px rgba(192,57,43,.22)}
+  /* Once locked, EVERY response reveals its own tier colour (like Step 1's questions
+     reveal every option after "Ask"), not just the one the player picked. The chosen
+     one additionally gets a strong ring via .chosen; unpicked ones are still fully
+     coloured but sit at slightly lower opacity so the chosen one still reads as primary. */
+  .resp-list.locked .resp-opt.tier-good{opacity:1;border-color:var(--lancia-deep);background:var(--green-bg)}
+  .resp-list.locked .resp-opt.tier-bad{opacity:1;border-color:var(--red);background:var(--red-bg)}
+  .resp-list.locked .resp-opt.chosen.tier-good{box-shadow:0 0 0 4px rgba(46,158,107,.28)}
+  .resp-list.locked .resp-opt.chosen.tier-bad{box-shadow:0 0 0 4px rgba(192,57,43,.22)}
+  .resp-list.locked .resp-opt.notchosen{opacity:.82}
   .resp-opt .rtag{display:inline-block;font-size:11px;font-weight:bold;border-radius:20px;padding:2px 9px;margin-top:8px}
   .resp-opt .rtag.good{background:#d9f5e6;color:var(--lancia-deep)}
   .resp-opt .rtag.bad{background:#fbe1de;color:var(--red)}
@@ -206,8 +213,10 @@
   .qcap-note{font-size:12px;color:#8a938f;font-style:italic;margin:-6px 0 14px}
   .resp-opt .rnext{display:block;margin-top:8px;padding-top:8px;border-top:1px dashed #e3ded7;font-size:12.5px;color:#5b6260}
   .resp-opt .rnext b{color:var(--bottle)}
-  .resp-list.locked .resp-opt.tier-mid{opacity:1;border-color:var(--mid);background:var(--mid-bg);box-shadow:0 0 0 4px rgba(138,90,18,.20)}
-  .resp-list.locked .resp-opt.tier-low{opacity:1;border-color:var(--low);background:var(--low-bg);box-shadow:0 0 0 4px rgba(156,107,46,.20)}
+  .resp-list.locked .resp-opt.tier-mid{opacity:1;border-color:var(--mid);background:var(--mid-bg)}
+  .resp-list.locked .resp-opt.tier-low{opacity:1;border-color:var(--low);background:var(--low-bg)}
+  .resp-list.locked .resp-opt.chosen.tier-mid{box-shadow:0 0 0 4px rgba(138,90,18,.20)}
+  .resp-list.locked .resp-opt.chosen.tier-low{box-shadow:0 0 0 4px rgba(156,107,46,.20)}
   .resp-opt .rtag.mid{background:#FBF1DF;color:var(--mid)}
   .resp-opt .rtag.low{background:#F4E9D8;color:var(--low)}
   .podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin:8px 0 26px;flex-wrap:wrap}
@@ -664,12 +673,15 @@ function render(){
     return `<div class="${cls}" ${clickable?`onclick="selectForm('${f.key}')"`:''}>
       <div class="flabel"><span class="emo">${f.emo}</span>${escapeHtml(f.label)}</div>
       <span class="fmean">${escapeHtml(f.meaning)}</span></div>`;}).join("");
+  /* Once verified, EVERY response reveals its own tier colour and "why" note, not just
+     the one the player chose, mirroring how Step 1 reveals every question after "Ask".
+     The chosen response additionally gets a "Your answer" badge and a stronger ring. */
   const respHtml=sc.rorder.map(i=>{const o=sc.responses[i];const tier=tierClass(o.pts);let cls="resp-opt";
     if(!st.locked&&st.resp===i)cls+=" sel";
-    if(st.locked){ cls+=" "+(i===st.resp?('chosen tier-'+tier):''); }
+    if(st.locked){ cls+=" tier-"+tier+(i===st.resp?" chosen":" notchosen"); }
     let tail="";
-    if(st.locked && i===st.resp){
-      tail = `<span class="ryours">\u2713 Your answer</span><span class="rtag ${tier}">${o.pts>=10?'Best response':'+'+o.pts+' pts'}</span><span class="rnote">${escapeHtml(o.note)}</span>`;
+    if(st.locked){
+      tail = `${i===st.resp?'<span class="ryours">\u2713 Your answer</span>':''}<span class="rtag ${tier}">${o.pts>=10?'Best response':'+'+o.pts+' pts'}</span><span class="rnote">${escapeHtml(o.note)}</span>`;
     }
     const clickable = stepsUnlocked && !st.locked;
     return `<div class="${cls}" ${clickable?`onclick="selectResp(${i})"`:''}>${escapeHtml(o.t)}<span class="rnext"><b>Next step:</b> ${escapeHtml(o.next)}</span>${tail}</div>`;}).join("");
