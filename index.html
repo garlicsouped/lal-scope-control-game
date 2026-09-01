@@ -513,11 +513,20 @@ async function deleteUserMappingRemote(user){
 }
 async function updateUserMappingGroupRemote(user,newGroup){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"PATCH",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({group_name:newGroup})});
-  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update group failed");} return true;
+  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update group failed");}
+  const data=await r.json().catch(()=>[]);
+  /* Supabase/PostgREST can return 200 OK with an empty array when the row exists but a
+     Row Level Security policy silently blocks the update (common if only insert/delete
+     policies were set up, not update). Treat that as a failure so it's never silent. */
+  if(!data.length){ throw new Error("No row was updated. This is often a Supabase permissions (RLS) issue, check that an UPDATE policy exists for lal_user_groups."); }
+  return true;
 }
 async function updateUserActiveRemote(user,active){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"PATCH",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({active:active})});
-  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update active status failed");} return true;
+  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update active status failed");}
+  const data=await r.json().catch(()=>[]);
+  if(!data.length){ throw new Error("No row was updated. This is often a Supabase permissions (RLS) issue, check that an UPDATE policy exists for lal_user_groups."); }
+  return true;
 }
 async function addGroupRemote(name){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({name:name})});
@@ -983,35 +992,38 @@ async function goLeaderboard(){
   renderLeaderboardLoading();
   try{
     const [allRows] = await Promise.all([fetchAllScores(), fetchUserMappings()]);
-    /* Players marked inactive in "Manage user mapping" are dropped entirely here,
-       so their scores don't affect the group total, the group average, or the
-       individual results table below. Rows with no mapped name (e.g. legacy/free-text
-       entries) are always kept since there's nothing to check them against. */
-    const rows = allRows.filter(r=>{
+    /* Inactive players still keep their name visible everywhere below (podium member
+       list and the individual results table), they're just left out of the group's
+       score total, count, and average so an inactive player never affects the ranking. */
+    function rowIsInactive(r){
       const names=(r.player_names||'').split(',').map(s=>s.trim()).filter(Boolean);
-      if(!names.length) return true;
-      return !names.some(n=>USER_ACTIVE_MAP[n]===false);
-    });
+      return names.length>0 && names.some(n=>USER_ACTIVE_MAP[n]===false);
+    }
     const agg={};
-    rows.forEach(r=>{
+    allRows.forEach(r=>{
       const g=r.group_name||'Unknown';
-      if(!agg[g])agg[g]={total:0,count:0,names:[]};
-      agg[g].total+=(r.score||0);
-      agg[g].count+=1; /* one row = one player's submitted score, used as the group's headcount */
-      (r.player_names||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>{if(!agg[g].names.includes(n))agg[g].names.push(n);});
+      if(!agg[g])agg[g]={total:0,count:0,members:[]};
+      const inactive=rowIsInactive(r);
+      if(!inactive){
+        agg[g].total+=(r.score||0);
+        agg[g].count+=1; /* one row = one active player's submitted score, used as the group's headcount */
+      }
+      (r.player_names||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>{
+        if(!agg[g].members.some(m=>m.name===n)) agg[g].members.push({name:n, inactive:USER_ACTIVE_MAP[n]===false});
+      });
     });
-    /* Average per player instead of a raw cumulative sum, so a group with more
+    /* Average per active player instead of a raw cumulative sum, so a group with more
        players isn't automatically ranked above a smaller group. */
     const list=Object.keys(agg).map(g=>({
       group:g,
       total:agg[g].total,
       count:agg[g].count,
       avg:agg[g].count?agg[g].total/agg[g].count:0,
-      members:agg[g].names.join(', ')
+      members:agg[g].members
     }));
     list.sort((a,b)=>b.avg-a.avg);
-    renderLeaderboard(list,null,rows);
-  }catch(e){ renderLeaderboard([], 'Could not reach the leaderboard. Check your connection and try again.', []); }
+    renderLeaderboard(list,null,allRows,rowIsInactive);
+  }catch(e){ renderLeaderboard([], 'Could not reach the leaderboard. Check your connection and try again.', [], ()=>false); }
 }
 function backFromLeaderboard(){
   const m=document.getElementById('mascot');
@@ -1019,25 +1031,32 @@ function backFromLeaderboard(){
   if(started){ if(m)m.style.display=''; render(); return; }
   showTutorial();
 }
-function individualRowsHtml(rows){
+function individualRowsHtml(rows, rowIsInactive){
   const sorted=(rows||[]).slice().sort((a,b)=>(b.score||0)-(a.score||0));
-  return sorted.map(r=>'<tr>'
-    +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:left">'+escapeHtml(r.player_names||'-')+'</td>'
+  return sorted.map(r=>{
+    const inactive = rowIsInactive ? rowIsInactive(r) : false;
+    const dim = inactive ? ';opacity:.55' : '';
+    return '<tr style="'+dim.slice(1)+'">'
+    +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:left">'+escapeHtml(r.player_names||'-')+(inactive?' <span style="color:#a85b3f;font-size:11px;font-weight:bold">(inactive, excluded)</span>':'')+'</td>'
     +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:left;font-weight:bold;color:#003F3C">'+escapeHtml(r.group_name||'-')+'</td>'
     +'<td style="border:1px solid #E3DED7;padding:8px 10px;text-align:center;font-weight:bold;color:#2E9E6B">'+(r.score||0)+'</td>'
-    +'</tr>').join('');
+    +'</tr>';
+  }).join('');
 }
-function renderLeaderboard(list, errMsg, rawRows){
+function renderLeaderboard(list, errMsg, rawRows, rowIsInactive){
   const top=list.slice(0,3), rest=list.slice(3);
   const podImg=[CHARS.thumbs,CHARS.wave,CHARS.search];
   function fmtAvg(n){ const r=Math.round((n||0)*10)/10; return (r%1===0)?String(r):r.toFixed(1); }
+  function membersLabel(members){
+    return (members||[]).map(m=>escapeHtml(m.name)+(m.inactive?' (inactive)':'')).join(', ');
+  }
   function col(rank,item){ if(!item) return '';
     return '<div class="podium-col podium-'+rank+' bounce-slow"><div class="podium-rank">'+rank+'</div><img src="'+podImg[rank-1]+'" alt="">'
-      +'<div class="podium-name">'+escapeHtml(item.group)+'</div><div class="podium-members">'+escapeHtml(item.members||'')+' ('+item.count+(item.count===1?' player':' players')+')</div>'
+      +'<div class="podium-name">'+escapeHtml(item.group)+'</div><div class="podium-members">'+membersLabel(item.members)+' ('+item.count+(item.count===1?' player':' players')+')</div>'
       +'<div class="podium-score">'+fmtAvg(item.avg)+'</div></div>';
   }
   const podiumHtml = top.length? '<div class="podium">'+col(2,top[1])+col(1,top[0])+col(3,top[2])+'</div>' : '';
-  const restHtml = rest.map((it,i)=>'<div class="lb-row"><span class="lb-rank">'+(i+4)+'</span><span class="lb-gname">'+escapeHtml(it.group)+'</span><span class="lb-gmembers">'+escapeHtml(it.members||'')+' ('+it.count+(it.count===1?' player':' players')+')</span><span class="lb-gscore">'+fmtAvg(it.avg)+'</span></div>').join('');
+  const restHtml = rest.map((it,i)=>'<div class="lb-row"><span class="lb-rank">'+(i+4)+'</span><span class="lb-gname">'+escapeHtml(it.group)+'</span><span class="lb-gmembers">'+membersLabel(it.members)+' ('+it.count+(it.count===1?' player':' players')+')</span><span class="lb-gscore">'+fmtAvg(it.avg)+'</span></div>').join('');
   const backLabel = finished ? '\u2190 Back to my results' : (started ? '\u2190 Back to game' : '\u2190 Back to start');
   const tableSection = errMsg ? '' : `
       <p class="section-label" style="margin-top:24px;text-align:left">Individual results</p>
@@ -1047,12 +1066,12 @@ function renderLeaderboard(list, errMsg, rawRows){
           <th style="background:#003F3C;color:#fff;padding:8px 10px;text-align:left;border:1px solid #003F3C">Group</th>
           <th style="background:#003F3C;color:#fff;padding:8px 10px;text-align:center;border:1px solid #003F3C">Score</th>
         </tr></thead>
-        <tbody>${(rawRows&&rawRows.length)?individualRowsHtml(rawRows):'<tr><td colspan="3" style="border:1px solid #E3DED7;padding:10px;text-align:center;color:#8a938f;font-style:italic">No individual results yet.</td></tr>'}</tbody>
+        <tbody>${(rawRows&&rawRows.length)?individualRowsHtml(rawRows,rowIsInactive):'<tr><td colspan="3" style="border:1px solid #E3DED7;padding:10px;text-align:center;color:#8a938f;font-style:italic">No individual results yet.</td></tr>'}</tbody>
       </table>`;
   document.getElementById('mascot').style.display='none';
   stage.innerHTML=`<div class="results">
       <h2>\uD83C\uDFC6 Leaderboard</h2>
-      <p class="msg" style="margin-bottom:18px">Average score per player, so groups of any size are compared fairly.</p>
+      <p class="msg" style="margin-bottom:18px">Average score per active player, so groups of any size are compared fairly. Inactive players still show up here but their scores don't count.</p>
       ${errMsg?`<p class="msg" style="color:#c0392b">${escapeHtml(errMsg)}</p>`:''}
       ${(!errMsg && !list.length)?'<p class="msg">No scores submitted yet, be the first!</p>':''}
       ${podiumHtml}
@@ -1346,11 +1365,11 @@ async function removeUserMapping(user){
 async function changeUserGroupClick(user,newGroup){
   if(!newGroup) return;
   try{ await updateUserMappingGroupRemote(user,newGroup); if(soundOn)SFX.good(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
-  catch(e){ alert('Could not update the group for that name, check your connection and try again.'); await openUserMappingManager(); }
+  catch(e){ alert('Could not update the group for that name: '+(e&&e.message?e.message:'check your connection and try again.')); await openUserMappingManager(); }
 }
 async function toggleUserActiveClick(user,makeActive){
   try{ await updateUserActiveRemote(user,makeActive); if(soundOn)SFX.click(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
-  catch(e){ alert('Could not update active status, check your connection and try again.'); }
+  catch(e){ alert('Could not update active status: '+(e&&e.message?e.message:'check your connection and try again.')); await openUserMappingManager(); }
 }
 
 /* ---- save the whole live page as a date-stamped HTML snapshot ---- */
