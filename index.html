@@ -465,6 +465,7 @@ const EDITS_KEY = "lal_scope_creep_edits_v9";
 const USE_USER_MAPPING = true;
 
 let USER_GROUP_MAP = {};   // { "Ally Kuek": "APAC Delivery Team 2", ... }
+let USER_ACTIVE_MAP = {};  // { "Ally Kuek": true, ... } - false means excluded from name-select and from the leaderboard
 let USER_LIST_CACHE = [];  // ["Ally Kuek", "Kenn Siang Leng", ...]
 /* FORMS and SCENARIOS injected above */
 const FORM_BY = {}; FORMS.forEach(f=>FORM_BY[f.key]=f);
@@ -486,28 +487,37 @@ let LAST_MAPPING_ERR="";
 async function fetchUserMappings(){
   LAST_MAPPING_ERR="";
   try{
-    const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?select=user_name,group_name&order=user_name.asc",{headers:supaHeaders()});
+    const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?select=user_name,group_name,active&order=user_name.asc",{headers:supaHeaders()});
     if(!r.ok){
       const body=await r.text().catch(()=>"");
       LAST_MAPPING_ERR="HTTP "+r.status+(body?(": "+body.slice(0,300)):"");
       throw new Error(LAST_MAPPING_ERR);
     }
     const data=await r.json();
-    USER_GROUP_MAP={}; USER_LIST_CACHE=[];
+    USER_GROUP_MAP={}; USER_ACTIVE_MAP={}; USER_LIST_CACHE=[];
     data.forEach(row=>{
       USER_GROUP_MAP[row.user_name]=row.group_name;
+      USER_ACTIVE_MAP[row.user_name]=(row.active!==false); /* missing/null column value is treated as active, so existing rows aren't silently hidden */
       USER_LIST_CACHE.push(row.user_name);
     });
     return true;
   }catch(e){ if(!LAST_MAPPING_ERR)LAST_MAPPING_ERR=String(e&&e.message||e); console.warn("fetchUserMappings failed",e); return false; }
 }
 async function addUserMappingRemote(user,group){
-  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({user_name:user,group_name:group})});
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({user_name:user,group_name:group,active:true})});
   if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"add mapping failed");} return true;
 }
 async function deleteUserMappingRemote(user){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"DELETE",headers:supaHeaders()});
   if(!r.ok){throw new Error("delete mapping failed");} return true;
+}
+async function updateUserMappingGroupRemote(user,newGroup){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"PATCH",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({group_name:newGroup})});
+  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update group failed");} return true;
+}
+async function updateUserActiveRemote(user,active){
+  const r=await fetch(SUPA_URL+"/rest/v1/lal_user_groups?user_name=eq."+encodeURIComponent(user),{method:"PATCH",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({active:active})});
+  if(!r.ok){const t=await r.text().catch(()=>""); throw new Error(t||"update active status failed");} return true;
 }
 async function addGroupRemote(name){
   const r=await fetch(SUPA_URL+"/rest/v1/lal_groups",{method:"POST",headers:supaHeaders({"Content-Type":"application/json",Prefer:"return=representation"}),body:JSON.stringify({name:name})});
@@ -654,8 +664,9 @@ async function loadUsersIntoTutorial(){
   const ok = await fetchUserMappings();
   const lbl=document.getElementById('autoGroupLine'); if(lbl)lbl.textContent='';
   if(!ok){ sel.innerHTML='<option value="">Could not load names, tap refresh to retry</option>'; sel.disabled=false; return; }
-  if(!USER_LIST_CACHE.length){ sel.innerHTML='<option value="">No names mapped yet, ask your facilitator to add one</option>'; sel.disabled=false; return; }
-  sel.innerHTML='<option value="">-- Select your name --</option>'+USER_LIST_CACHE.map(n=>'<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('');
+  const activeNames = USER_LIST_CACHE.filter(n=>USER_ACTIVE_MAP[n]!==false);
+  if(!activeNames.length){ sel.innerHTML='<option value="">No names mapped yet, ask your facilitator to add one</option>'; sel.disabled=false; return; }
+  sel.innerHTML='<option value="">-- Select your name --</option>'+activeNames.map(n=>'<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>').join('');
   sel.disabled=false;
 }
 function onUserSelectChange(){
@@ -971,7 +982,16 @@ function renderLeaderboardLoading(){
 async function goLeaderboard(){
   renderLeaderboardLoading();
   try{
-    const rows=await fetchAllScores();
+    const [allRows] = await Promise.all([fetchAllScores(), fetchUserMappings()]);
+    /* Players marked inactive in "Manage user mapping" are dropped entirely here,
+       so their scores don't affect the group total, the group average, or the
+       individual results table below. Rows with no mapped name (e.g. legacy/free-text
+       entries) are always kept since there's nothing to check them against. */
+    const rows = allRows.filter(r=>{
+      const names=(r.player_names||'').split(',').map(s=>s.trim()).filter(Boolean);
+      if(!names.length) return true;
+      return !names.some(n=>USER_ACTIVE_MAP[n]===false);
+    });
     const agg={};
     rows.forEach(r=>{
       const g=r.group_name||'Unknown';
@@ -1184,18 +1204,27 @@ async function openGroupManager(){
   let ov=document.getElementById('adminOverlay');
   if(!ov){ov=document.createElement('div');ov.id='adminOverlay';document.body.appendChild(ov);}
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,32,30,.75);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:28px 16px;font-family:Arial,Helvetica,sans-serif';
-  ov.innerHTML=groupManagerHtml('Loading groups\u2026', []);
-  const names = await fetchGroups();
-  if(names===null){ ov.innerHTML = groupManagerHtml('Could not reach the database, check your connection and reopen this panel.', []); return; }
+  ov.innerHTML=groupManagerHtml('Loading groups\u2026', [], {});
+  const [names] = await Promise.all([fetchGroups(), fetchUserMappings()]);
+  if(names===null){ ov.innerHTML = groupManagerHtml('Could not reach the database, check your connection and reopen this panel.', [], {}); return; }
   GROUPS_CACHE = names;
-  ov.innerHTML = groupManagerHtml(null, names);
+  /* headcount per group, from the same user mapping list managed in "Manage user mapping",
+     so a facilitator can double check they've added the right number of people per group */
+  const counts={}; Object.keys(USER_GROUP_MAP).forEach(u=>{ const g=USER_GROUP_MAP[u]; if(!g) return; counts[g]=(counts[g]||0)+1; });
+  ov.innerHTML = groupManagerHtml(null, names, counts);
 }
-function groupManagerHtml(err, names){
-  const rows = (names&&names.length) ? names.map(n=>'<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px"><span style="font-weight:bold;color:#003F3C">'+escapeHtml(n)+'</span><button onclick="removeGroup(\''+n.replace(/'/g,"\\'")+'\')" style="'+EDDEL+'">Remove</button></div>').join('')
+function groupManagerHtml(err, names, counts){
+  counts=counts||{};
+  const totalPeople = Object.values(counts).reduce((a,b)=>a+b,0);
+  const rows = (names&&names.length) ? names.map(n=>{
+    const c=counts[n]||0;
+    return '<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px"><span style="font-weight:bold;color:#003F3C">'+escapeHtml(n)+' <span style="font-weight:normal;color:#8a938f;font-size:12px">('+c+(c===1?' person':' people')+')</span></span><button onclick="removeGroup(\''+n.replace(/'/g,"\\'")+'\')" style="'+EDDEL+'">Remove</button></div>';
+  }).join('')
     : '<div style="font-size:13px;color:#8a938f;font-style:italic;margin-bottom:6px">No groups yet, add one below.</div>';
   return '<div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:24px 24px 22px;box-shadow:0 18px 40px rgba(0,0,0,.35);margin-top:40px;font-family:Arial,Helvetica,sans-serif">'
     +'<div style="font-size:12px;letter-spacing:2px;color:#2E9E6B;font-weight:bold">FACILITATOR</div>'
-    +'<div style="font-size:20px;font-weight:bold;color:#003F3C;margin:2px 0 12px">Manage groups</div>'
+    +'<div style="font-size:20px;font-weight:bold;color:#003F3C;margin:2px 0 4px">Manage groups</div>'
+    +((names&&names.length)?'<div style="font-size:12.5px;color:#5b6260;margin-bottom:12px">'+names.length+(names.length===1?' group':' groups')+' &middot; '+totalPeople+(totalPeople===1?' person mapped':' people mapped')+' in total</div>':'<div style="margin-bottom:8px"></div>')
     +(err?'<div style="color:#c0392b;font-size:13px;margin-bottom:10px">'+escapeHtml(err)+'</div>':'')
     +'<div style="max-height:240px;overflow:auto;margin-bottom:12px">'+rows+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px">'
@@ -1241,26 +1270,59 @@ async function openUserMappingManager(){
   const [ok, groupNames] = await Promise.all([fetchUserMappings(), fetchGroups()]);
   if(!ok){ ov.innerHTML = userMappingManagerHtml('Could not load user mappings. '+(LAST_MAPPING_ERR||'Check your connection and reopen this panel.'), [], groupNames||[]); return; }
   if(groupNames!==null) GROUPS_CACHE=groupNames;
-  const rows = USER_LIST_CACHE.map(u=>({user:u,group:USER_GROUP_MAP[u]}));
+  const rows = USER_LIST_CACHE.map(u=>({user:u,group:USER_GROUP_MAP[u],active:USER_ACTIVE_MAP[u]!==false}));
   ov.innerHTML = userMappingManagerHtml(null, rows, GROUPS_CACHE||[]);
 }
 function userMappingManagerHtml(err, rows, groupNames){
-  const list = (rows&&rows.length) ? rows.map(r=>
-      '<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px;gap:8px">'
-      +'<span style="font-weight:bold;color:#003F3C;flex:1">'+escapeHtml(r.user)+'</span>'
-      +'<span style="color:#5b6260;font-size:12.5px;flex:1;text-align:left">'+escapeHtml(r.group||'')+(r.group&&groupNames&&groupNames.length&&groupNames.indexOf(r.group)===-1?' <b style="color:#c0392b">(not in Manage groups)</b>':'')+'</span>'
+  const totalCount=rows.length;
+  const activeCount=rows.filter(r=>r.active).length;
+  const inactiveCount=totalCount-activeCount;
+  const headerCount = totalCount
+    ? '<div style="font-size:12.5px;color:#5b6260;margin-bottom:10px">'+totalCount+(totalCount===1?' person mapped':' people mapped')+' &middot; '+activeCount+' active'+(inactiveCount?' &middot; '+inactiveCount+' inactive':'')+'</div>'
+    : '';
+  function groupSelect(r){
+    const opts = (groupNames&&groupNames.length)
+      ? groupNames.map(g=>'<option value="'+escapeHtml(g)+'"'+(g===r.group?' selected':'')+'>'+escapeHtml(g)+'</option>').join('')
+      : '<option value="">No groups yet</option>';
+    const missing = r.group&&groupNames&&groupNames.length&&groupNames.indexOf(r.group)===-1;
+    return '<select onchange="changeUserGroupClick(\''+r.user.replace(/'/g,"\\'")+'\',this.value)" style="flex:1;min-width:150px;font-size:12.5px;padding:6px 8px;border:1.5px solid '+(missing?'#f0b6ae':'#cdd8ff')+';border-radius:8px;outline:none;font-family:inherit;color:#003F3C;background:#fff">'
+      +(missing?'<option value="'+escapeHtml(r.group)+'" selected>'+escapeHtml(r.group)+' (not in Manage groups)</option>':'')
+      +opts+'</select>';
+  }
+  function activeBadge(r){
+    return r.active
+      ? '<button onclick="toggleUserActiveClick(\''+r.user.replace(/'/g,"\\'")+'\',false)" style="background:#e6f7ee;color:#2E9E6B;border:1px solid #b7e6cd;border-radius:14px;padding:5px 10px;font-size:11.5px;font-weight:bold;cursor:pointer;font-family:inherit;white-space:nowrap">&#10003; Active</button>'
+      : '<button onclick="toggleUserActiveClick(\''+r.user.replace(/'/g,"\\'")+'\',true)" style="background:#f7f2ee;color:#a85b3f;border:1px solid #eccdbd;border-radius:14px;padding:5px 10px;font-size:11.5px;font-weight:bold;cursor:pointer;font-family:inherit;white-space:nowrap">Inactive</button>';
+  }
+  function rowHtml(r){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f9f8;border-radius:8px;padding:8px 12px;margin-bottom:6px;gap:8px;flex-wrap:wrap'+(r.active?'':';opacity:.6')+'">'
+      +'<span style="font-weight:bold;color:#003F3C;flex:1;min-width:110px">'+escapeHtml(r.user)+'</span>'
+      +groupSelect(r)
+      +activeBadge(r)
       +'<button onclick="removeUserMapping(\''+r.user.replace(/'/g,"\\'")+'\')" style="'+EDDEL+'">Remove</button>'
-      +'</div>').join('')
-    : '<div style="font-size:13px;color:#8a938f;font-style:italic;margin-bottom:6px">No mappings yet, add one below.</div>';
+      +'</div>';
+  }
+  /* group the list by group name so a facilitator can scan headcounts per group at a glance,
+     which is also what "Show me the count in the list too" is asking for */
+  const byGroup={};
+  rows.forEach(r=>{ const g=r.group||'(no group yet)'; if(!byGroup[g])byGroup[g]=[]; byGroup[g].push(r); });
+  const groupKeysSorted=Object.keys(byGroup).sort((a,b)=>a.localeCompare(b));
+  const list = totalCount ? groupKeysSorted.map(g=>{
+    const members=byGroup[g];
+    const activeInG=members.filter(m=>m.active).length;
+    return '<div style="font-size:11.5px;font-weight:bold;color:#2E9E6B;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px">'+escapeHtml(g)+' &middot; '+members.length+(members.length===1?' person':' people')+(activeInG<members.length?' ('+activeInG+' active)':'')+'</div>'
+      +members.map(rowHtml).join('');
+  }).join('') : '<div style="font-size:13px;color:#8a938f;font-style:italic;margin-bottom:6px">No mappings yet, add one below.</div>';
   const groupOptions = (groupNames&&groupNames.length)
     ? '<option value="">-- Select group --</option>'+groupNames.map(g=>'<option value="'+escapeHtml(g)+'">'+escapeHtml(g)+'</option>').join('')
     : '<option value="">No groups yet, add one in Manage groups first</option>';
-  return '<div style="background:#fff;border-radius:18px;max-width:520px;width:100%;padding:24px 24px 22px;box-shadow:0 18px 40px rgba(0,0,0,.35);margin-top:40px;font-family:Arial,Helvetica,sans-serif">'
+  return '<div style="background:#fff;border-radius:18px;max-width:560px;width:100%;padding:24px 24px 22px;box-shadow:0 18px 40px rgba(0,0,0,.35);margin-top:40px;font-family:Arial,Helvetica,sans-serif">'
     +'<div style="font-size:12px;letter-spacing:2px;color:#2E9E6B;font-weight:bold">FACILITATOR</div>'
     +'<div style="font-size:20px;font-weight:bold;color:#003F3C;margin:2px 0 4px">Manage user mapping</div>'
-    +'<div style="font-size:12.5px;color:#5b6260;margin-bottom:12px">Maps each player\'s name to a predefined group, so they only need to pick their name to join the right group. Group must match an existing group exactly, so pick it from the list rather than typing it, this avoids scores silently failing to submit.</div>'
+    +'<div style="font-size:12.5px;color:#5b6260;margin-bottom:6px">Maps each player\'s name to a predefined group, so they only need to pick their name to join the right group. Change the group any time using the dropdown next to a name. Mark someone Inactive to hide them from the name-select list and leave their scores out of the leaderboard, without deleting their mapping.</div>'
+    +headerCount
     +(err?'<div style="color:#c0392b;font-size:13px;margin-bottom:10px">'+escapeHtml(err)+'</div>':'')
-    +'<div style="max-height:280px;overflow:auto;margin-bottom:12px">'+list+'</div>'
+    +'<div style="max-height:320px;overflow:auto;margin-bottom:12px">'+list+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
     +'<input id="newMapUser" placeholder="Name (e.g. Ally Kuek)" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit" onkeydown="if(event.key===\'Enter\')addUserMappingClick()">'
     +'<select id="newMapGroup" style="flex:1;min-width:160px;font-size:14px;padding:9px 11px;border:2px solid #E3DED7;border-radius:9px;outline:none;font-family:inherit">'+groupOptions+'</select>'
@@ -1280,6 +1342,15 @@ async function removeUserMapping(user){
   if(!confirm('Remove the mapping for "'+user+'"?'))return;
   try{ await deleteUserMappingRemote(user); if(soundOn)SFX.click(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
   catch(e){ alert('Could not remove that mapping, check your connection and try again.'); }
+}
+async function changeUserGroupClick(user,newGroup){
+  if(!newGroup) return;
+  try{ await updateUserMappingGroupRemote(user,newGroup); if(soundOn)SFX.good(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
+  catch(e){ alert('Could not update the group for that name, check your connection and try again.'); await openUserMappingManager(); }
+}
+async function toggleUserActiveClick(user,makeActive){
+  try{ await updateUserActiveRemote(user,makeActive); if(soundOn)SFX.click(); await openUserMappingManager(); refreshTutorialUsersIfShown(); }
+  catch(e){ alert('Could not update active status, check your connection and try again.'); }
 }
 
 /* ---- save the whole live page as a date-stamped HTML snapshot ---- */
